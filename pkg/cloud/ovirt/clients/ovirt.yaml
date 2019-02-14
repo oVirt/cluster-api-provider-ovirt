@@ -1,0 +1,17 @@
+url: https://ovirt-engine-fqdn/ovirt-engine/api
+username: admin@internal
+password:
+cafile: 
+# Data Center
+datacenter: Default
+# Cluster
+cluster: Default
+# Default Template ?
+template: coreos-7-x86_64
+# Default cpus
+cpus: 4
+# Default Memory
+memory: 16Gb
+
+# qcow url of the image to import?
+qcow_url:
