@@ -9,10 +9,10 @@ items:
     providerSpec:
       value:
         apiVersion: "openstackproviderconfig/v1alpha1"
-        kind: "OpenstackProviderSpec"
+        kind: "OvirtProviderSpec"
         flavor: m1.medium
-        image: CentOS-7-x86_64-GenericCloud
-        sshUserName: centos
+        image: Ubuntu-Server-16.04-x64
+        sshUserName: ubuntu
         keyName: cluster-api-provider-openstack
         availabilityZone: nova
         networks:
@@ -22,7 +22,7 @@ items:
         - default
         userDataSecret:
           name: master-user-data
-          namespace: openstack-provider-system
+          namespace: ovirt-cluster-provider-system
     versions:
       kubelet: 1.12.3
       controlPlane: 1.12.3
@@ -36,10 +36,10 @@ items:
     providerSpec:
       value:
         apiVersion: "openstackproviderconfig/v1alpha1"
-        kind: "OpenstackProviderSpec"
+        kind: "OvirtProviderSpec"
         flavor: m1.medium
-        image: CentOS-7-x86_64-GenericCloud
-        sshUserName: centos
+        image: Ubuntu-Server-16.04-x64
+        sshUserName: ubuntu
         keyName: cluster-api-provider-openstack
         availabilityZone: nova
         networks:
@@ -49,6 +49,6 @@ items:
         - default
         userDataSecret:
           name: worker-user-data
-          namespace: openstack-provider-system
+          namespace: ovirt-cluster-provider-system
     versions:
       kubelet: 1.12.3

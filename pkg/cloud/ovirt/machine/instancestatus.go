@@ -36,7 +36,7 @@ const InstanceStatusAnnotationKey = "instance-status"
 type instanceStatus *clusterv1.Machine
 
 // Get the status of the instance identified by the given machine
-func (oc *OpenstackClient) instanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
+func (oc *OvirtClient) instanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
 	currentMachine, err := util.GetMachineIfExists(oc.client, machine.Namespace, machine.Name)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (oc *OpenstackClient) instanceStatus(machine *clusterv1.Machine) (instanceS
 }
 
 // Sets the status of the instance identified by the given machine to the given machine
-func (oc *OpenstackClient) updateInstanceStatus(machine *clusterv1.Machine) error {
+func (oc *OvirtClient) updateInstanceStatus(machine *clusterv1.Machine) error {
 	status := instanceStatus(machine)
 	currentMachine, err := util.GetMachineIfExists(oc.client, machine.Namespace, machine.Name)
 	if err != nil {
@@ -71,7 +71,7 @@ func (oc *OpenstackClient) updateInstanceStatus(machine *clusterv1.Machine) erro
 }
 
 // Gets the state of the instance stored on the given machine CRD
-func (oc *OpenstackClient) machineInstanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
+func (oc *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
 	if machine.ObjectMeta.Annotations == nil {
 		// No state
 		return nil, nil
@@ -94,7 +94,7 @@ func (oc *OpenstackClient) machineInstanceStatus(machine *clusterv1.Machine) (in
 }
 
 // Applies the state of an instance onto a given machine CRD
-func (oc *OpenstackClient) setMachineInstanceStatus(machine *clusterv1.Machine, status instanceStatus) (*clusterv1.Machine, error) {
+func (oc *OvirtClient) setMachineInstanceStatus(machine *clusterv1.Machine, status instanceStatus) (*clusterv1.Machine, error) {
 	// Avoid status within status within status ...
 	status.ObjectMeta.Annotations[InstanceStatusAnnotationKey] = ""
 

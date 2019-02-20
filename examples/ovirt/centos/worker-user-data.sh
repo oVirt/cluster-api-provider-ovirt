@@ -49,9 +49,6 @@ apiVersion: kubeadm.k8s.io/v1alpha3
 kind: JoinConfiguration
 nodeRegistration:
   name: $(hostname -s)
-  kubeletExtraArgs:
-    cloud-provider: "openstack"
-    cloud-config: "/etc/kubernetes/cloud.conf"
 token: ${TOKEN}
 discoveryTokenAPIServers:
   - ${MASTER}

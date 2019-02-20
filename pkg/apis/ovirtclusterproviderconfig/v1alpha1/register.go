@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/runtime/scheme"
 )
 
-const GroupName = "ovirtproviderconfig"
+const GroupName = "ovirtclusterproviderconfig"
 
 var (
 	// SchemeGroupVersion is group version used to register these objects
@@ -39,7 +39,7 @@ var (
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 )
 
-// ClusterConfigFromProviderSpec unmarshals a provider config into an OpenStack Cluster type
+// ClusterConfigFromProviderSpec unmarshals a provider config into an Ovirt Cluster type
 func ClusterSpecFromProviderSpec(providerSpec clusterv1.ProviderSpec) (*OvirtClusterProviderSpec, error) {
 	if providerSpec.Value == nil {
 		return nil, errors.New("no such providerSpec found in manifest")
@@ -52,7 +52,7 @@ func ClusterSpecFromProviderSpec(providerSpec clusterv1.ProviderSpec) (*OvirtClu
 	return &config, nil
 }
 
-// ClusterStatusFromProviderStatus unmarshals a provider status into an OpenStack Cluster Status type
+// ClusterStatusFromProviderStatus unmarshals a provider status into an Ovirt Cluster Status type
 func ClusterStatusFromProviderStatus(extension *runtime.RawExtension) (*OvirtClusterProviderStatus, error) {
 	if extension == nil {
 		return &OvirtClusterProviderStatus{}, nil

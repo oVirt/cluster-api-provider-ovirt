@@ -18,76 +18,82 @@ package main
 
 import (
 	"flag"
-	"log"
-	"time"
+	"fmt"
+	"os"
 
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
-	"sigs.k8s.io/cluster-api-provider-openstack/pkg/apis"
-	"sigs.k8s.io/cluster-api-provider-openstack/pkg/controller"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/cluster"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis
+
+	"sigs.k8s.io/cluster-api/pkg/apis/cluster/common"
+
+
 	clusterapis "sigs.k8s.io/cluster-api/pkg/apis"
+	"sigs.k8s.io/cluster-api/pkg/apis/cluster/common"
+	"sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
+	capicluster "sigs.k8s.io/cluster-api/pkg/controller/cluster"
+	capimachine "sigs.k8s.io/cluster-api/pkg/controller/machine"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
+
 )
 
-var logFlushFreq = flag.Duration("log-flush-frequency", 5*time.Second, "Maximum number of seconds between log flushes")
-
-func initLogs() {
-
-	flag.Set("alsologtostderr", "true")
-	flag.Parse()
-
-	// The default klog flush interval is 30 seconds, which is frighteningly long.
-	go wait.Until(klog.Flush, *logFlushFreq, wait.NeverStop)
-
-	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
-	klog.InitFlags(klogFlags)
-
-	// Sync the glog and klog flags.
-	flag.CommandLine.VisitAll(func(f1 *flag.Flag) {
-		f2 := klogFlags.Lookup(f1.Name)
-		if f2 != nil {
-			value := f1.Value.String()
-			f2.Value.Set(value)
-		}
-	})
-}
-
 func main() {
-
-	initLogs()
-
-	// Get a config to talk to the apiserver
-	cfg, err := config.GetConfig()
-	if err != nil {
-		klog.Fatal(err)
+	cfg := config.GetConfigOrDie()
+	if cfg == nil {
+		panic(fmt.Errorf("GetConfigOrDie didn't die"))
 	}
 
-	// Create a new Cmd to provide shared dependencies and start components
+	flag.Parse()
+	log := logf.Log.WithName("solas-controller-manager")
+	logf.SetLogger(logf.ZapLogger(false))
+	entryLog := log.WithName("entrypoint")
+
+	// Setup a Manager
 	mgr, err := manager.New(cfg, manager.Options{})
 	if err != nil {
-		klog.Fatal(err)
+		entryLog.Error(err, "unable to set up overall controller manager")
+		os.Exit(1)
 	}
 
-	klog.Infof("Initializing Dependencies.")
+	cs, err := clientset.NewForConfig(cfg)
+	if err != nil {
+		panic(err)
+	}
 
-	// Setup Scheme for all resources
+	clusterActuator, err := cluster.NewActuator(cluster.ActuatorParams{
+		ClustersGetter: cs.ClusterV1alpha1(),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	machineActuator, err := machine.NewActuator(machine.ActuatorParams{
+		MachinesGetter: cs.ClusterV1alpha1(),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Register our cluster deployer (the interface is in clusterctl and we define the Deployer interface on the actuator)
+	common.RegisterClusterProvisioner("solas", clusterActuator)
+
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		klog.Fatal(err)
+		panic(err)
 	}
 
 	if err := clusterapis.AddToScheme(mgr.GetScheme()); err != nil {
-		klog.Fatal(err)
+		panic(err)
 	}
 
-	// Setup all Controllers
-	if err := controller.AddToManager(mgr); err != nil {
-		klog.Fatal(err)
+	capimachine.AddWithActuator(mgr, machineActuator)
+
+	capicluster.AddWithActuator(mgr, clusterActuator)
+
+	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
+		entryLog.Error(err, "unable to run manager")
+		os.Exit(1)
 	}
-
-	log.Printf("Starting the Cmd.")
-
-	// Start the Cmd
-	log.Fatal(mgr.Start(signals.SetupSignalHandler()))
 }

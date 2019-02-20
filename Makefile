@@ -28,7 +28,7 @@ VERSION ?= $(shell git describe --exact-match 2> /dev/null || \
 GOFLAGS   :=
 TAGS      :=
 LDFLAGS   := "-w -s -X 'main.version=${VERSION}'"
-REGISTRY ?= k8scloudprovider
+REGISTRY ?= quay.io/rgolangh
 
 ifneq ("$(realpath $(DEST))", "$(realpath $(PWD))")
     $(error Please run 'make' from $(DEST). Current directory is $(PWD))
@@ -132,12 +132,12 @@ shell:
 generate:
 	go generate ./pkg/... ./cmd/...
 
-images: openstack-cluster-api-controller
+images: ovirt-cluster-api-controller
 
-openstack-cluster-api-controller: depend manager
+ovirt-cluster-api-controller: manager
 ifeq ($(GOOS),linux)
 	cp bin/manager cmd/manager
-	docker build -t $(REGISTRY)/openstack-cluster-api-controller:$(VERSION) cmd/manager
+	docker build -t $(REGISTRY)/ovirt-cluster-api-controller:$(VERSION) cmd/manager
 	rm cmd/manager/manager
 else
 	$(error Please set GOOS=linux for building the image)
@@ -146,7 +146,7 @@ endif
 upload-images: images
 	@echo "push images to $(REGISTRY)"
 	docker login -u="$(DOCKER_USERNAME)" -p="$(DOCKER_PASSWORD)";
-	docker push $(REGISTRY)/openstack-cluster-api-controller:$(VERSION)
+	docker push $(REGISTRY)/ovirt-cluster-api-controller:$(VERSION)
 
 version:
 	@echo ${VERSION}
@@ -157,7 +157,7 @@ build-cross: depend
 ifndef HAS_GOX
 	go get -u github.com/mitchellh/gox
 endif
-	CGO_ENABLED=0 gox -parallel=$(GOX_PARALLEL) -output="_dist/{{.OS}}-{{.Arch}}/{{.Dir}}" -osarch='$(TARGETS)' $(GOFLAGS) $(if $(TAGS),-tags '$(TAGS)',) -ldflags '$(LDFLAGS)' $(GIT_HOST)/$(BASE_DIR)/cmd/openstack-machine-controller/
+	CGO_ENABLED=0 gox -parallel=$(GOX_PARALLEL) -output="_dist/{{.OS}}-{{.Arch}}/{{.Dir}}" -osarch='$(TARGETS)' $(GOFLAGS) $(if $(TAGS),-tags '$(TAGS)',) -ldflags '$(LDFLAGS)' $(GIT_HOST)/$(BASE_DIR)/cmd/ovirt-machine-controller/
 
 .PHONY: dist
 dist: build-cross
@@ -165,8 +165,8 @@ dist: build-cross
 		cd _dist && \
 		$(DIST_DIRS) cp ../LICENSE {} \; && \
 		$(DIST_DIRS) cp ../README.md {} \; && \
-		$(DIST_DIRS) tar -zcf cluster-api-provider-openstack-$(VERSION)-{}.tar.gz {} \; && \
-		$(DIST_DIRS) zip -r cluster-api-provider-openstack-$(VERSION)-{}.zip {} \; \
+		$(DIST_DIRS) tar -zcf cluster-api-provider-ovirt-$(VERSION)-{}.tar.gz {} \; && \
+		$(DIST_DIRS) zip -r cluster-api-provider-ovirt-$(VERSION)-{}.zip {} \; \
 	)
 
 .PHONY: build clean cover depend docs fmt functional lint realclean \

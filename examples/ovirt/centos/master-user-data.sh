@@ -94,9 +94,6 @@ apiEndpoint:
   bindPort: 443
 nodeRegistration:
   name: $(hostname -s)
-  kubeletExtraArgs:
-    cloud-provider: "openstack"
-    cloud-config: "/etc/kubernetes/cloud.conf"
 ---
 apiVersion: kubeadm.k8s.io/v1alpha3
 kind: ClusterConfiguration
@@ -104,24 +101,11 @@ kubernetesVersion: v${CONTROL_PLANE_VERSION}
 networking:
   serviceSubnet: ${SERVICE_CIDR}
 clusterName: kubernetes
-apiServerExtraArgs:
-  cloud-provider: "openstack"
-  cloud-config: "/etc/kubernetes/cloud.conf"
-apiServerExtraVolumes:
-- name: cloud
-  hostPath: "/etc/kubernetes/cloud.conf"
-  mountPath: "/etc/kubernetes/cloud.conf"
 controlPlaneEndpoint: ${MASTER}
 controllerManagerExtraArgs:
   cluster-cidr: ${POD_CIDR}
   service-cluster-ip-range: ${SERVICE_CIDR}
   allocate-node-cidrs: "true"
-  cloud-provider: "openstack"
-  cloud-config: "/etc/kubernetes/cloud.conf"
-controllerManagerExtraVolumes:
-- name: cloud
-  hostPath: "/etc/kubernetes/cloud.conf"
-  mountPath: "/etc/kubernetes/cloud.conf"
 EOF
 
 kubeadm init --config /etc/kubernetes/kubeadm_config.yaml

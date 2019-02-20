@@ -18,11 +18,11 @@ package clients
 
 import (
 	"fmt"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/ovirtapi"
 	"gopkg.in/yaml.v2"
 	"k8s.io/client-go/kubernetes"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtproviderconfig/v1alpha1"
-	"github.com/ovirt/ovirt-openshift-extensions/pkg/ovirt/api"
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 )
@@ -30,11 +30,11 @@ import (
 const CloudsSecretKey = "ovirt.conf"
 
 type InstanceService struct {
-	ovirtApi api.OvirtApi
+	ovirtApi ovirtapi.OvirtApi
 }
 
 type Instance struct {
-	api.VM
+	ovirtapi.VM
 }
 
 type SshKeyPair struct {
@@ -64,8 +64,8 @@ type InstanceListOpts struct {
 	Name string `q:"name"`
 }
 
-func GetOvirtConnectionConf(kubeClient kubernetes.Interface, namespace string, secretName string) (api.Connection, error) {
-	zeroConf := api.Connection{}
+func GetOvirtConnectionConf(kubeClient kubernetes.Interface, namespace string, secretName string) (ovirtapi.Connection, error) {
+	zeroConf := ovirtapi.Connection{}
 
 	if secretName == "" {
 		return zeroConf, nil
@@ -82,7 +82,7 @@ func GetOvirtConnectionConf(kubeClient kubernetes.Interface, namespace string, s
 			secretName, CloudsSecretKey)
 	}
 
-	var c = api.Connection{}
+	var c = ovirtapi.Connection{}
 	err = yaml.Unmarshal(content, &c)
 	if err != nil {
 		return zeroConf, fmt.Errorf("failed to unmarshal clouds credentials stored in secret %v: %v", secretName, err)
@@ -105,12 +105,12 @@ func NewInstanceServiceFromMachine(kubeClient kubernetes.Interface, machine *clu
 }
 
 func NewInstanceService() (*InstanceService, error) {
-	return NewInstanceServiceFromConf(api.Connection{})
+	return NewInstanceServiceFromConf(ovirtapi.Connection{})
 }
 
-func NewInstanceServiceFromConf(connection api.Connection) (*InstanceService, error) {
+func NewInstanceServiceFromConf(connection ovirtapi.Connection) (*InstanceService, error) {
 
-	ovirtApi, err := api.New(connection)
+	ovirtApi, err := ovirtapi.NewOvirt(connection)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ovirt api client: %v", err)
 	}
@@ -122,10 +122,10 @@ func (is *InstanceService) InstanceCreate(name string, config *ovirtconfigv1.Ovi
 	if config == nil {
 		return nil, fmt.Errorf("create Options need be specified to create instace")
 	}
-	create, err := is.ovirtApi.Post("vms", api.VM{
+	create, err := is.ovirtApi.Post("vms", ovirtapi.VM{
 		Name: name,
-		Cluster: api.NameId{Name: "Default"},
-		Template: api.NameId{Name: "Blank"},
+		Cluster: ovirtapi.NameId{Name: "Default"},
+		Template: ovirtapi.NameId{Name: "Blank"},
 	})
 
 	vm, err := is.ovirtApi.GetVMById(create)

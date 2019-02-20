@@ -20,7 +20,7 @@ import (
 	"k8s.io/klog"
 
 	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/openstack"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
@@ -38,7 +38,7 @@ func AddToManager(m manager.Manager) error {
 	return nil
 }
 
-func getActuatorParams(mgr manager.Manager) openstack.ActuatorParams {
+func getActuatorParams(mgr manager.Manager) ovirt.ActuatorParams {
 	config := mgr.GetConfig()
 
 	kubeClient, err := kubernetes.NewForConfig(config)
@@ -46,7 +46,7 @@ func getActuatorParams(mgr manager.Manager) openstack.ActuatorParams {
 		klog.Fatalf("Could not create kubernetes client to talk to the apiserver: %v", err)
 	}
 
-	return openstack.ActuatorParams{
+	return ovirt.ActuatorParams{
 		Client:        mgr.GetClient(),
 		KubeClient:    kubeClient,
 		Scheme:        mgr.GetScheme(),

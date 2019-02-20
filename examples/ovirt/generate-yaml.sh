@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -ex
 
 # Function that prints out the help message, describing the script
 print_help()
@@ -11,7 +11,6 @@ print_help()
   echo "options:"
   echo "-h, --help                show brief help"
   echo "-f, --force-overwrite     if file to be generated already exists, force script to overwrite it"
-  echo "-c, --clouds [File]       specifies an existing clouds.yaml file to use rather than generating one interactively"
   echo "--provider-os [os name]   Required: select the operating system of your provider environment"
   echo "                            Supported Operating Systems: ubuntu, centos"
   echo ""
@@ -85,24 +84,6 @@ if test -z "$SUPPORTED_PROVIDER_OS"; then
   exit 1
 fi
 
-if [ -z "$OS_CLOUD" ]; then
-  echo "OS_CLOUD environment variable is not set. Please set OS_CLOUD before running this script."
-  exit 1
-fi
-
-if ! hash yq 2>/dev/null; then
-  echo "'yq' is not available, please install it. (https://github.com/mikefarah/yq)"
-  print_help
-  exit 1
-fi
-
-yq_type=$(file $(which yq))
-if [[ $yq_type == *"Python script"* ]]; then
-  echo "Wrong version of 'yq' installed, please install the one from https://github.com/mikefarah/yq"
-  print_help
-  exit 1
-fi
-
 # Define global variables
 PWD=$(cd `dirname $0`; pwd)
 TEMPLATES_PATH=${TEMPLATES_PATH:-$PWD/$SUPPORTED_PROVIDER_OS}
@@ -115,13 +96,14 @@ CLUSTER_CRD_DIR="${HOME_DIR}/vendor/sigs.k8s.io/cluster-api/config/crds"
 CLUSTER_RBAC_DIR="${HOME_DIR}/vendor/sigs.k8s.io/cluster-api/config/rbac"
 CLUSTER_MANAGER_DIR="${HOME_DIR}/vendor/sigs.k8s.io/cluster-api/config/manager"
 
-MACHINE_TEMPLATE_FILE=${TEMPLATES_PATH}/machines.yaml.template
+MACHINE_TEMPLATE_FILE=${TEMPLATES_PATH}/machines.yaml.in
 MACHINE_GENERATED_FILE=${OUTPUT_DIR}/machines.yaml
-CLUSTER_TEMPLATE_FILE=${TEMPLATES_PATH}/cluster.yaml.template
+CLUSTER_TEMPLATE_FILE=${TEMPLATES_PATH}/cluster.yaml.in
 CLUSTER_GENERATED_FILE=${OUTPUT_DIR}/cluster.yaml
-PROVIDERCOMPONENT_TEMPLATE_FILE=${TEMPLATES_PATH}/provider-components.yaml.template
+PROVIDERCOMPONENT_TEMPLATE_FILE=${TEMPLATES_PATH}/provider-components.yaml.in
 PROVIDERCOMPONENT_GENERATED_FILE=${OUTPUT_DIR}/provider-components.yaml
 
+OVIRT_CONF_FILE=${TEMPLATES_PATH}/ovirt.conf
 MASTER_USER_DATA_FILE=${TEMPLATES_PATH}/master-user-data.sh
 WORKER_USER_DATA_FILE=${TEMPLATES_PATH}/worker-user-data.sh
 
@@ -154,51 +136,11 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
-if [ -n "$CLOUDS_PATH" ]; then
-  # Read clouds.yaml from file if a path is provided
-  OPENSTACK_CLOUD_CONFIG_PLAIN=$(cat "$CLOUDS_PATH")
-else
-  # Collect user input to generate a clouds.yaml file
-  read -p "Enter your username:" username
-  read -p "Enter your domainname:" domain_name
-  read -p "Enter your project id:" project_id
-  read -p "Enter region name:" region
-  read -p "Enter authurl:" authurl
-  read -s -p "Enter your password:" password
-  OPENSTACK_CLOUD_CONFIG_PLAIN="clouds:
-  openstack:
-    auth:
-      username: $username
-      password: $password
-      user_domain_name: $domain_name
-      project_id: $project_id
-      auth_url: $authurl
-    interface: public
-    identity_api_version: 3
-    region_name: $region"
-fi
-
 MASTER_USER_DATA_PLAIN=$(cat "$MASTER_USER_DATA_FILE")
 WORKER_USER_DATA_PLAIN=$(cat "$WORKER_USER_DATA_FILE")
 
-# Just blindly parse the cloud.conf here, overwriting old vars.
-AUTH_URL=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN" | yq r - clouds.$OS_CLOUD.auth.auth_url)
-USERNAME=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN" | yq r - clouds.$OS_CLOUD.auth.username)
-PASSWORD=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN" | yq r - clouds.$OS_CLOUD.auth.password)
-REGION=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN" | yq r - clouds.$OS_CLOUD.region_name)
-PROJECT_ID=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN" | yq r - clouds.$OS_CLOUD.auth.project_id)
-DOMAIN_NAME=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN" | yq r - clouds.$OS_CLOUD.auth.user_domain_name)
-
-
-# Basic cloud.conf, no LB configuration as that data is not known yet.
-OPENSTACK_CLOUD_PROVIDER_CONF_PLAIN="[Global]
-auth-url=$AUTH_URL
-username=\"$USERNAME\"
-password=\"$PASSWORD\"
-region=\"$REGION\"
-tenant-id=\"$PROJECT_ID\"
-domain-name=\"$DOMAIN_NAME\"
-"
+# get the ovirt env details
+source centos/ovirt.conf
 
 # Check if the ssh key already exists. If not, generate and copy to the .ssh dir.
 if [ ! -f $MACHINE_CONTROLLER_SSH_HOME$MACHINE_CONTROLLER_SSH_PRIVATE_FILE ]; then
@@ -210,29 +152,19 @@ MACHINE_CONTROLLER_SSH_PLAIN=clusterapi
 
 OS=$(uname)
 if [[ "$OS" =~ "Linux" ]]; then
-  OPENSTACK_CLOUD_CONFIG=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN"|base64 -w0)
-  OPENSTACK_CLOUD_PROVIDER_CONF=$(echo "$OPENSTACK_CLOUD_PROVIDER_CONF_PLAIN"|base64 -w0)
   MACHINE_CONTROLLER_SSH_USER=$(echo -n $MACHINE_CONTROLLER_SSH_PLAIN|base64 -w0)
   MACHINE_CONTROLLER_SSH_PUBLIC=$(cat "$MACHINE_CONTROLLER_SSH_HOME$MACHINE_CONTROLLER_SSH_PUBLIC_FILE"|base64 -w0)
   MACHINE_CONTROLLER_SSH_PRIVATE=$(cat "$MACHINE_CONTROLLER_SSH_HOME$MACHINE_CONTROLLER_SSH_PRIVATE_FILE"|base64 -w0)
-  MASTER_USER_DATA=$(echo "$MASTER_USER_DATA_PLAIN" \
-    | sed -e "s/\$OPENSTACK_CLOUD_PROVIDER_CONF/$OPENSTACK_CLOUD_PROVIDER_CONF/" \
-    | base64 -w0)
-  WORKER_USER_DATA=$(echo "$WORKER_USER_DATA_PLAIN" \
-    | sed -e "s/\$OPENSTACK_CLOUD_PROVIDER_CONF/$OPENSTACK_CLOUD_PROVIDER_CONF/" \
-    | base64 -w0)
+  OVIRT_CONF=$(cat "$OVIRT_CONF_FILE"|base64 -w0)
+  MASTER_USER_DATA=$(cat "$MASTER_USER_DATA_FILE"|base64 -w0)
+  WORKER_USER_DATA=$(cat "$WORKER_USER_DATA_FILE"|base64 -w0)
 elif [[ "$OS" =~ "Darwin" ]]; then
-  OPENSTACK_CLOUD_CONFIG=$(echo "$OPENSTACK_CLOUD_CONFIG_PLAIN"|base64)
-  OPENSTACK_CLOUD_PROVIDER_CONF=$(echo "$OPENSTACK_CLOUD_PROVIDER_CONF_PLAIN"|base64)
   MACHINE_CONTROLLER_SSH_USER=$(printf $MACHINE_CONTROLLER_SSH_PLAIN|base64)
   MACHINE_CONTROLLER_SSH_PUBLIC=$(cat "$MACHINE_CONTROLLER_SSH_HOME$MACHINE_CONTROLLER_SSH_PUBLIC_FILE"|base64)
   MACHINE_CONTROLLER_SSH_PRIVATE=$(cat "$MACHINE_CONTROLLER_SSH_HOME$MACHINE_CONTROLLER_SSH_PRIVATE_FILE"|base64)
-  MASTER_USER_DATA=$(echo "$MASTER_USER_DATA_PLAIN" \
-    | sed -e "s/\$OPENSTACK_CLOUD_PROVIDER_CONF/$OPENSTACK_CLOUD_PROVIDER_CONF/" \
-    | base64)
-  WORKER_USER_DATA=$(echo "$WORKER_USER_DATA_PLAIN" \
-    | sed -e "s/\$OPENSTACK_CLOUD_PROVIDER_CONF/$OPENSTACK_CLOUD_PROVIDER_CONF/" \
-    | base64)
+  OVIRT_CONF=$(cat "$OVIRT_CONF_FILE"|base64 -w0)
+  MASTER_USER_DATA=$(cat "$MASTER_USER_DATA_FILE"|base64 -w0)
+  WORKER_USER_DATA=$(cat "$WORKER_USER_DATA_FILE"|base64 -w0)
 else
   echo "Unrecognized OS : $OS"
   exit 1
@@ -247,11 +179,6 @@ done
 for file in `ls "${PROVIDER_RBAC_DIR}"`
 do
     cat "${PROVIDER_RBAC_DIR}/${file}" >> "$PROVIDERCOMPONENT_GENERATED_FILE"
-    echo "---" >> "$PROVIDERCOMPONENT_GENERATED_FILE"
-done
-for file in `ls "${PROVIDER_MANAGER_DIR}"`
-do
-    sed "s/{OS_CLOUD}/$OS_CLOUD/g" "${PROVIDER_MANAGER_DIR}/${file}" >> "$PROVIDERCOMPONENT_GENERATED_FILE"
     echo "---" >> "$PROVIDERCOMPONENT_GENERATED_FILE"
 done
 for file in `ls "${CLUSTER_MANAGER_DIR}"`
@@ -270,14 +197,24 @@ do
     echo "---" >> "$PROVIDERCOMPONENT_GENERATED_FILE"
 done
 
-cat "$PROVIDERCOMPONENT_TEMPLATE_FILE" \
-  | sed -e "s/\$OPENSTACK_CLOUD_CONFIG/$OPENSTACK_CLOUD_CONFIG/" \
-  | sed -e "s/\$MACHINE_CONTROLLER_SSH_USER/$MACHINE_CONTROLLER_SSH_USER/" \
-  | sed -e "s/\$MACHINE_CONTROLLER_SSH_PUBLIC/$MACHINE_CONTROLLER_SSH_PUBLIC/" \
-  | sed -e "s/\$MACHINE_CONTROLLER_SSH_PRIVATE/$MACHINE_CONTROLLER_SSH_PRIVATE/" \
-  | sed -e "s/\$MASTER_USER_DATA/$MASTER_USER_DATA/" \
-  | sed -e "s/\$WORKER_USER_DATA/$WORKER_USER_DATA/" \
-  >> "$PROVIDERCOMPONENT_GENERATED_FILE"
+#cat "$PROVIDERCOMPONENT_TEMPLATE_FILE" \
+#  | sed -e "s/\$MACHINE_CONTROLLER_SSH_USER/$MACHINE_CONTROLLER_SSH_USER/" \
+#  | sed -e "s/\$MACHINE_CONTROLLER_SSH_PUBLIC/$MACHINE_CONTROLLER_SSH_PUBLIC/" \
+#  | sed -e "s/\$MACHINE_CONTROLLER_SSH_PRIVATE/$MACHINE_CONTROLLER_SSH_PRIVATE/" \
+#  | sed -e "s/\$OVIRT_CONF/$OVIRT_CONF/" \
+#  | sed -e "s/\$MASTER_USER_DATA/$MASTER_USER_DATA/" \
+#  | sed -e "s/\$WORKER_USER_DATA/$WORKER_USER_DATA/" \
+#  >> "$PROVIDERCOMPONENT_GENERATED_FILE"
+
+export \
+    MACHINE_CONTROLLER_SSH_USER \
+    MACHINE_CONTROLLER_SSH_PUBLIC \
+    MACHINE_CONTROLLER_SSH_PRIVATE \
+    OVIRT_CONF \
+    MASTER_USER_DATA \
+    WORKER_USER_DATA
+
+cat "$PROVIDERCOMPONENT_TEMPLATE_FILE" | envsubst >> "$PROVIDERCOMPONENT_GENERATED_FILE"
 
 if [[ "$OS" =~ "Linux" ]]; then
   sed -i "s#image: controller:latest#image: gcr.io/k8s-cluster-api/cluster-api-controller:$CONTROLLER_IMAGE_VERSION#" "$PROVIDERCOMPONENT_GENERATED_FILE"

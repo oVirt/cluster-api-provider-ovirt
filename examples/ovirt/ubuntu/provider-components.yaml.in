@@ -3,7 +3,7 @@ kind: Secret
 type: Opaque
 metadata:
   name: machine-controller-sshkeys
-  namespace: openstack-provider-system
+  namespace: ovirt-cluster-provider-system
 data:
   user: $MACHINE_CONTROLLER_SSH_USER
   private: $MACHINE_CONTROLLER_SSH_PRIVATE
@@ -14,7 +14,7 @@ kind: Secret
 type: Opaque
 metadata:
   name: cloud-config
-  namespace: openstack-provider-system
+  namespace: ovirt-cluster-provider-system
 data:
   clouds.yaml: $OPENSTACK_CLOUD_CONFIG
 ---
@@ -23,7 +23,7 @@ kind: Secret
 type: Opaque
 metadata:
   name: worker-user-data
-  namespace: openstack-provider-system
+  namespace: ovirt-cluster-provider-system
 data:
   userData: $WORKER_USER_DATA
 ---
@@ -32,6 +32,6 @@ kind: Secret
 type: Opaque
 metadata:
   name: master-user-data
-  namespace: openstack-provider-system
+  namespace: ovirt-cluster-provider-system
 data:
   userData: $MASTER_USER_DATA

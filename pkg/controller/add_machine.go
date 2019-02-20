@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	ocm "sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/openstack/machine"
+	ocm "github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
 	"sigs.k8s.io/cluster-api/pkg/controller/machine"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )

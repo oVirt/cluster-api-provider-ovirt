@@ -23,7 +23,7 @@ import (
 
 	"fmt"
 
-	openstackconfigv1 "sigs.k8s.io/cluster-api-provider-openstack/pkg/apis/openstackproviderconfig/v1alpha1"
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 )
 
@@ -31,7 +31,7 @@ type setupParams struct {
 	Token       string
 	Cluster     *clusterv1.Cluster
 	Machine     *clusterv1.Machine
-	MachineSpec *openstackconfigv1.OpenstackProviderSpec
+	MachineSpec *ovirtconfigv1.OvirtMachineProviderSpec
 
 	PodCIDR           string
 	ServiceCIDR       string
@@ -42,7 +42,7 @@ func init() {
 }
 
 func masterStartupScript(cluster *clusterv1.Cluster, machine *clusterv1.Machine, script string) (string, error) {
-	machineSpec, err := openstackconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
+	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +65,7 @@ func masterStartupScript(cluster *clusterv1.Cluster, machine *clusterv1.Machine,
 }
 
 func nodeStartupScript(cluster *clusterv1.Cluster, machine *clusterv1.Machine, token, script string) (string, error) {
-	machineSpec, err := openstackconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
+	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {
 		return "", err
 	}

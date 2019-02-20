@@ -27,7 +27,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
 	"k8s.io/klog"
-	openstackconfigv1 "sigs.k8s.io/cluster-api-provider-openstack/pkg/apis/openstackproviderconfig/v1alpha1"
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
 )
 
 const (
@@ -48,12 +48,12 @@ func NewNetworkService(client *gophercloud.ServiceClient) (*NetworkService, erro
 }
 
 // Reconcile the Network for a given cluster
-func (s *NetworkService) Reconcile(clusterName string, desired openstackconfigv1.OpenstackClusterProviderSpec, status *openstackconfigv1.OpenstackClusterProviderStatus) error {
+func (s *NetworkService) Reconcile(clusterName string, desired ovirtconfigv1.OvirtClusterProviderSpec, status *ovirtconfigv1.OvirtClusterProviderStatus) error {
 	klog.Infof("Reconciling network components for cluster %s", clusterName)
-	if desired.NodeCIDR == "" {
-		klog.V(4).Infof("No need to reconcile network for cluster %s", clusterName)
-		return nil
-	}
+	//if desired.NodeCIDR == "" {
+	//	klog.V(4).Infof("No need to reconcile network for cluster %s", clusterName)
+	//	return nil
+	//}
 	networkName := fmt.Sprintf("%s-cluster-%s", networkPrefix, clusterName)
 	network, err := s.reconcileNetwork(clusterName, networkName, desired)
 	if err != nil {
@@ -91,9 +91,9 @@ func (s *NetworkService) Reconcile(clusterName string, desired openstackconfigv1
 	return nil
 }
 
-func (s *NetworkService) reconcileNetwork(clusterName, networkName string, desired openstackconfigv1.OpenstackClusterProviderSpec) (openstackconfigv1.Network, error) {
+func (s *NetworkService) reconcileNetwork(clusterName, networkName string, desired ovirtconfigv1.OvirtClusterProviderSpec) (ovirtconfigv1.Network, error) {
 	klog.Infof("Reconciling network %s", networkName)
-	emptyNetwork := openstackconfigv1.Network{}
+	emptyNetwork := ovirtconfigv1.Network{}
 	res, err := s.getNetworkByName(networkName)
 	if err != nil {
 		return emptyNetwork, err
@@ -101,7 +101,7 @@ func (s *NetworkService) reconcileNetwork(clusterName, networkName string, desir
 
 	if res.ID != "" {
 		// Network exists
-		return openstackconfigv1.Network{
+		return ovirtconfigv1.Network{
 			ID:   res.ID,
 			Name: res.Name,
 		}, nil
@@ -125,18 +125,18 @@ func (s *NetworkService) reconcileNetwork(clusterName, networkName string, desir
 		return emptyNetwork, err
 	}
 
-	return openstackconfigv1.Network{
+	return ovirtconfigv1.Network{
 		ID:   network.ID,
 		Name: network.Name,
 	}, nil
 }
 
-func (s *NetworkService) reconcileSubnets(clusterName, name string, desired openstackconfigv1.OpenstackClusterProviderSpec, network openstackconfigv1.Network) (openstackconfigv1.Subnet, error) {
+func (s *NetworkService) reconcileSubnets(clusterName, name string, desired ovirtconfigv1.OvirtClusterProviderSpec, network ovirtconfigv1.Network) (ovirtconfigv1.Subnet, error) {
 	klog.Infof("Reconciling subnet %s", name)
-	emptySubnet := openstackconfigv1.Subnet{}
+	emptySubnet := ovirtconfigv1.Subnet{}
 	allPages, err := subnets.List(s.client, subnets.ListOpts{
 		NetworkID: network.ID,
-		CIDR:      desired.NodeCIDR,
+		//CIDR:      desired.NodeCIDR,
 	}).AllPages()
 	if err != nil {
 		return emptySubnet, err
@@ -147,31 +147,31 @@ func (s *NetworkService) reconcileSubnets(clusterName, name string, desired open
 		return emptySubnet, err
 	}
 
-	var observedSubnet openstackconfigv1.Subnet
+	var observedSubnet ovirtconfigv1.Subnet
 	if len(subnetList) > 1 {
 		// Not panicing here, because every other cluster might work.
-		return emptySubnet, fmt.Errorf("found more than 1 network with the expected name (%d) and CIDR (%s), which should not be able to exist in OpenStack", len(subnetList), desired.NodeCIDR)
+		return emptySubnet, fmt.Errorf("found more than 1 network with the expected name (%d)", len(subnetList))
 	} else if len(subnetList) == 0 {
 		opts := subnets.CreateOpts{
 			NetworkID: network.ID,
 			Name:      name,
 			IPVersion: 4,
 
-			CIDR: desired.NodeCIDR,
+			//CIDR: desired.NodeCIDR,
 		}
 
 		newSubnet, err := subnets.Create(s.client, opts).Extract()
 		if err != nil {
 			return emptySubnet, err
 		}
-		observedSubnet = openstackconfigv1.Subnet{
+		observedSubnet = ovirtconfigv1.Subnet{
 			ID:   newSubnet.ID,
 			Name: newSubnet.Name,
 
 			CIDR: newSubnet.CIDR,
 		}
 	} else if len(subnetList) == 1 {
-		observedSubnet = openstackconfigv1.Subnet{
+		observedSubnet = ovirtconfigv1.Subnet{
 			ID:   subnetList[0].ID,
 			Name: subnetList[0].Name,
 
@@ -191,9 +191,9 @@ func (s *NetworkService) reconcileSubnets(clusterName, name string, desired open
 	return observedSubnet, nil
 }
 
-func (s *NetworkService) reconcileRouter(clusterName, name string, desired openstackconfigv1.OpenstackClusterProviderSpec, network openstackconfigv1.Network) (openstackconfigv1.Router, error) {
+func (s *NetworkService) reconcileRouter(clusterName, name string, desired ovirtconfigv1.OvirtClusterProviderSpec, network ovirtconfigv1.Network) (ovirtconfigv1.Router, error) {
 	klog.Infof("Reconciling router %s", name)
-	emptyRouter := openstackconfigv1.Router{}
+	emptyRouter := ovirtconfigv1.Router{}
 	if network.ID == "" {
 		klog.V(3).Info("No need to reconcile router. There is no network.")
 		return emptyRouter, nil
@@ -234,7 +234,7 @@ func (s *NetworkService) reconcileRouter(clusterName, name string, desired opens
 		router = routerList[0]
 	}
 
-	observedRouter := openstackconfigv1.Router{
+	observedRouter := ovirtconfigv1.Router{
 		Name: router.Name,
 		ID:   router.ID,
 	}

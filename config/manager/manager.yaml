@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     controller-tools.k8s.io: "1.0"
-  name: openstack-provider-system
+  name: ovirt-cluster-provider-system
 ---
 apiVersion: v1
 kind: Service
@@ -11,8 +11,8 @@ metadata:
   labels:
     control-plane: controller-manager
     controller-tools.k8s.io: "1.0"
-  name: openstack-provider-controller-manager-service
-  namespace: openstack-provider-system
+  name: ovirt-cluster-provider-controller-manager-service
+  namespace: ovirt-cluster-provider-system
 spec:
   ports:
   - port: 443
@@ -27,15 +27,33 @@ metadata:
     control-plane: controller-manager
     controller-tools.k8s.io: "1.0"
   name: cloud-selector
-  namespace: openstack-provider-system
+  namespace: ovirt-cluster-provider-system
 data:
-  OS_CLOUD: {OS_CLOUD}
+  OS_CLOUD: >
+    url: https://rgolan.usersys.redhat.com:8443/ovirt-engine/api
+    username: admin@internal
+    password: 123
+    cafile: /dev/null
+    insecure: true
+    # Data Center
+    datacenter: Default
+    # Cluster
+    cluster: Default
+    # Default Template ?
+    template: coreos-7-x86_64
+    # Default cpus
+    cpus: 4
+    # Default Memory
+    memory: 16Gb
+    # qcow url of the image to import?
+    qcow_url:
+
 ---
 apiVersion: apps/v1beta1
 kind: Deployment
 metadata:
   name: clusterapi-controllers
-  namespace: openstack-provider-system
+  namespace: ovirt-cluster-provider-system
   labels:
     control-plane: controller-manager
     controller-tools.k8s.io: "1.0"
@@ -59,15 +77,15 @@ spec:
         key: node.alpha.kubernetes.io/unreachable
         operator: Exists
       containers:
-      - name: openstack-machine-controller
-        image: k8scloudprovider/openstack-cluster-api-controller:latest
+      - name: ovirt-machine-controller
+        image: quay.io/rgolangh/ovirt-cluster-api-controller:latest
         volumeMounts:
         - name: config
           mountPath: /etc/kubernetes
         - name: sshkeys
           mountPath: /etc/sshkeys
         - name: cloud-config
-          mountPath: /etc/openstack
+          mountPath: /etc/ovirt
         - name: kubeadm
           mountPath: /usr/bin/kubeadm
         resources:

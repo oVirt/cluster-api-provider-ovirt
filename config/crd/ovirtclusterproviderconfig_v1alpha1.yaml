@@ -5,12 +5,12 @@ metadata:
   creationTimestamp: null
   labels:
     controller-tools.k8s.io: "1.0"
-  name: openstackproviderspecs.openstackproviderconfig.k8s.io
+  name: ovirtclusterproviderspecs.ovirtclusterproviderconfig.k8s.io
 spec:
-  group: openstackproviderconfig.k8s.io
+  group: ovirtclusterproviderconfig.k8s.io
   names:
-    kind: OpenstackProviderSpec
-    plural: openstackproviderspecs
+    kind: OvirtProviderSpec
+    plural: ovirtproviderspecs
   scope: Namespaced
   validation:
     openAPIV3Schema:

@@ -12,5 +12,5 @@ spec:
     providerSpec:
       value:
         apiVersion: "openstackproviderconfig/v1alpha1"
-        kind: "OpenstackProviderSpec"
+        kind: "OvirtProviderSpec"
 

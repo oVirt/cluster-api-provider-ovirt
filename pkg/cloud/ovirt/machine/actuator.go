@@ -18,23 +18,21 @@ package machine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"reflect"
 	"strings"
 	"time"
 
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/bootstrap"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	tokenapi "k8s.io/cluster-bootstrap/token/api"
 	tokenutil "k8s.io/cluster-bootstrap/token/util"
 	"k8s.io/klog"
-	openstackconfigv1 "sigs.k8s.io/cluster-api-provider-openstack/pkg/apis/openstackproviderconfig/v1alpha1"
-	bootstrap "sigs.k8s.io/cluster-api-provider-openstack/pkg/bootstrap"
-	"sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/openstack"
-	"sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/openstack/clients"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 	apierrors "sigs.k8s.io/cluster-api/pkg/errors"
 	"sigs.k8s.io/cluster-api/pkg/util"
@@ -60,23 +58,23 @@ type SshCreds struct {
 	publicKey      string
 }
 
-type OpenstackClient struct {
-	params openstack.ActuatorParams
+type OvirtClient struct {
+	params ovirt.ActuatorParams
 	scheme *runtime.Scheme
 	client client.Client
-	*openstack.DeploymentClient
+	*ovirt.DeploymentClient
 }
 
-func NewActuator(params openstack.ActuatorParams) (*OpenstackClient, error) {
-	return &OpenstackClient{
+func NewActuator(params ovirt.ActuatorParams) (*OvirtClient, error) {
+	return &OvirtClient{
 		params:           params,
 		client:           params.Client,
 		scheme:           params.Scheme,
-		DeploymentClient: openstack.NewDeploymentClient(),
+		DeploymentClient: ovirt.NewDeploymentClient(),
 	}, nil
 }
 
-func (oc *OpenstackClient) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
+func (oc *OvirtClient) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
 	kubeClient := oc.params.KubeClient
 
 	machineService, err := clients.NewInstanceServiceFromMachine(kubeClient, machine)
@@ -84,7 +82,7 @@ func (oc *OpenstackClient) Create(ctx context.Context, cluster *clusterv1.Cluste
 		return err
 	}
 
-	providerSpec, err := openstackconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
+	providerSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
 			"Cannot unmarshal providerSpec field: %v", err))
@@ -105,7 +103,7 @@ func (oc *OpenstackClient) Create(ctx context.Context, cluster *clusterv1.Cluste
 
 	// get machine startup script
 	var ok bool
-	userData := []byte{}
+	var userData []byte
 	if providerSpec.UserDataSecret != nil {
 		namespace := providerSpec.UserDataSecret.Namespace
 		if namespace == "" {
@@ -133,19 +131,19 @@ func (oc *OpenstackClient) Create(ctx context.Context, cluster *clusterv1.Cluste
 			userDataRendered, err = masterStartupScript(cluster, machine, string(userData))
 			if err != nil {
 				return oc.handleMachineError(machine, apierrors.CreateMachine(
-					"error creating Openstack instance: %v", err))
+					"error creating Ovirt instance: %v", err))
 			}
 		} else {
 			klog.Info("Creating bootstrap token")
 			token, err := oc.createBootstrapToken()
 			if err != nil {
 				return oc.handleMachineError(machine, apierrors.CreateMachine(
-					"error creating Openstack instance: %v", err))
+					"error creating Ovirt instance: %v", err))
 			}
 			userDataRendered, err = nodeStartupScript(cluster, machine, token, string(userData))
 			if err != nil {
 				return oc.handleMachineError(machine, apierrors.CreateMachine(
-					"error creating Openstack instance: %v", err))
+					"error creating Ovirt instance: %v", err))
 			}
 		}
 	}
@@ -153,11 +151,11 @@ func (oc *OpenstackClient) Create(ctx context.Context, cluster *clusterv1.Cluste
 	instance, err = machineService.InstanceCreate(machine.Name, providerSpec, userDataRendered, providerSpec.KeyName)
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.CreateMachine(
-			"error creating Openstack instance: %v", err))
+			"error creating Ovirt instance: %v", err))
 	}
 	// TODO: wait instance ready
 	err = util.PollImmediate(RetryIntervalInstanceStatus, TimeoutInstanceCreate, func() (bool, error) {
-		instance, err := machineService.GetInstance(instance.ID)
+		instance, err := machineService.GetInstance(instance.Id)
 		if err != nil {
 			return false, nil
 		}
@@ -165,22 +163,14 @@ func (oc *OpenstackClient) Create(ctx context.Context, cluster *clusterv1.Cluste
 	})
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.CreateMachine(
-			"error creating Openstack instance: %v", err))
+			"error creating Ovirt instance: %v", err))
 	}
 
-	if providerSpec.FloatingIP != "" {
-		err := machineService.AssociateFloatingIP(instance.ID, providerSpec.FloatingIP)
-		if err != nil {
-			return oc.handleMachineError(machine, apierrors.CreateMachine(
-				"Associate floatingIP err: %v", err))
-		}
 
-	}
-
-	return oc.updateAnnotation(machine, instance.ID)
+	return oc.updateAnnotation(machine, instance.Id)
 }
 
-func (oc *OpenstackClient) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
+func (oc *OvirtClient) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
 	machineService, err := clients.NewInstanceServiceFromMachine(oc.params.KubeClient, machine)
 	if err != nil {
 		return err
@@ -196,17 +186,17 @@ func (oc *OpenstackClient) Delete(ctx context.Context, cluster *clusterv1.Cluste
 		return nil
 	}
 
-	id := machine.ObjectMeta.Annotations[openstack.OpenstackIdAnnotationKey]
+	id := machine.ObjectMeta.Annotations[ovirt.OvirtIdAnnotationKey]
 	err = machineService.InstanceDelete(id)
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.DeleteMachine(
-			"error deleting Openstack instance: %v", err))
+			"error deleting Ovirt instance: %v", err))
 	}
 
 	return nil
 }
 
-func (oc *OpenstackClient) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
+func (oc *OvirtClient) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
 	status, err := oc.instanceStatus(machine)
 	if err != nil {
 		return err
@@ -220,7 +210,7 @@ func (oc *OpenstackClient) Update(ctx context.Context, cluster *clusterv1.Cluste
 		}
 		if instance != nil && instance.Status == "ACTIVE" {
 			klog.Infof("Populating current state for boostrap machine %v", machine.ObjectMeta.Name)
-			return oc.updateAnnotation(machine, instance.ID)
+			return oc.updateAnnotation(machine, instance.Id)
 		} else {
 			return fmt.Errorf("Cannot retrieve current state to update machine %v", machine.ObjectMeta.Name)
 		}
@@ -249,7 +239,7 @@ func (oc *OpenstackClient) Update(ctx context.Context, cluster *clusterv1.Cluste
 	return nil
 }
 
-func (oc *OpenstackClient) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) (bool, error) {
+func (oc *OvirtClient) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine) (bool, error) {
 	instance, err := oc.instanceExists(machine)
 	if err != nil {
 		return false, err
@@ -258,42 +248,34 @@ func (oc *OpenstackClient) Exists(ctx context.Context, cluster *clusterv1.Cluste
 }
 
 func getIPFromInstance(instance *clients.Instance) (string, error) {
-	if instance.AccessIPv4 != "" && net.ParseIP(instance.AccessIPv4) != nil {
-		return instance.AccessIPv4, nil
-	}
 	type networkInterface struct {
 		Address string  `json:"addr"`
 		Version float64 `json:"version"`
 		Type    string  `json:"OS-EXT-IPS:type"`
 	}
-	var addrList []string
 
-	for _, b := range instance.Addresses {
-		list, err := json.Marshal(b)
-		if err != nil {
-			return "", fmt.Errorf("extract IP from instance err: %v", err)
-		}
-		var networks []interface{}
-		json.Unmarshal(list, &networks)
-		for _, network := range networks {
-			var netInterface networkInterface
-			b, _ := json.Marshal(network)
-			json.Unmarshal(b, &netInterface)
-			if netInterface.Version == 4.0 {
-				if netInterface.Type == "floating" {
-					return netInterface.Address, nil
+	if len(instance.Nics.Nics) == 0 {
+		return "", fmt.Errorf("the instance %s has no reported interaces", instance.Name)
+	}
+
+	// The ovirt-guest agent reports all ips. It is possible to blacklist
+	// some devices from the report. Specifically to get the public ip address
+	// we don't have a reliable way other than heuristics to get an accessible public ip
+	// possibly match it against the current network
+	for _, nic := range instance.Nics.Nics {
+			for _, device := range nic.Devices.Devices {
+				for _, ip := range  device.Ips.Ips {
+					if ip.Version == "v4" {
+						return ip.Address, nil
+					}
 				}
-				addrList = append(addrList, netInterface.Address)
 			}
-		}
 	}
-	if len(addrList) != 0 {
-		return addrList[0], nil
-	}
+
 	return "", fmt.Errorf("extract IP from instance err")
 }
 
-func (oc *OpenstackClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clusterv1.Machine) (string, error) {
+func (oc *OvirtClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clusterv1.Machine) (string, error) {
 	if _, err := os.Stat(SshPublicKeyPath); err != nil {
 		klog.Infof("Can't get the KubeConfig file as the public ssh key could not be found: %v\n", SshPublicKeyPath)
 		return "", nil
@@ -309,7 +291,7 @@ func (oc *OpenstackClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clu
 		return "", err
 	}
 
-	machineSpec, err := openstackconfigv1.MachineSpecFromProviderSpec(master.Spec.ProviderSpec)
+	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(master.Spec.ProviderSpec)
 	if err != nil {
 		return "", err
 	}
@@ -328,11 +310,11 @@ func (oc *OpenstackClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clu
 	return strings.TrimSpace(parts[1]), nil
 }
 
-// If the OpenstackClient has a client for updating Machine objects, this will set
+// If the OvirtClient has a client for updating Machine objects, this will set
 // the appropriate reason/message on the Machine.Status. If not, such as during
 // cluster installation, it will operate as a no-op. It also returns the
 // original error for convenience, so callers can do "return handleMachineError(...)".
-func (oc *OpenstackClient) handleMachineError(machine *clusterv1.Machine, err *apierrors.MachineError) error {
+func (oc *OvirtClient) handleMachineError(machine *clusterv1.Machine, err *apierrors.MachineError) error {
 	if oc.client != nil {
 		reason := err.Reason
 		message := err.Message
@@ -347,24 +329,24 @@ func (oc *OpenstackClient) handleMachineError(machine *clusterv1.Machine, err *a
 	return err
 }
 
-func (oc *OpenstackClient) updateAnnotation(machine *clusterv1.Machine, id string) error {
+func (oc *OvirtClient) updateAnnotation(machine *clusterv1.Machine, id string) error {
 	if machine.ObjectMeta.Annotations == nil {
 		machine.ObjectMeta.Annotations = make(map[string]string)
 	}
-	machine.ObjectMeta.Annotations[openstack.OpenstackIdAnnotationKey] = id
+	machine.ObjectMeta.Annotations[ovirt.OvirtIdAnnotationKey] = id
 	instance, _ := oc.instanceExists(machine)
 	ip, err := getIPFromInstance(instance)
 	if err != nil {
 		return err
 	}
-	machine.ObjectMeta.Annotations[openstack.OpenstackIPAnnotationKey] = ip
+	machine.ObjectMeta.Annotations[ovirt.OvirtIPAnnotationKey] = ip
 	if err := oc.client.Update(nil, machine); err != nil {
 		return err
 	}
 	return oc.updateInstanceStatus(machine)
 }
 
-func (oc *OpenstackClient) requiresUpdate(a *clusterv1.Machine, b *clusterv1.Machine) bool {
+func (oc *OvirtClient) requiresUpdate(a *clusterv1.Machine, b *clusterv1.Machine) bool {
 	if a == nil || b == nil {
 		return true
 	}
@@ -375,8 +357,8 @@ func (oc *OpenstackClient) requiresUpdate(a *clusterv1.Machine, b *clusterv1.Mac
 		a.ObjectMeta.Name != b.ObjectMeta.Name
 }
 
-func (oc *OpenstackClient) instanceExists(machine *clusterv1.Machine) (instance *clients.Instance, err error) {
-	machineSpec, err := openstackconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
+func (oc *OvirtClient) instanceExists(machine *clusterv1.Machine) (instance *clients.Instance, err error) {
+	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +383,7 @@ func (oc *OpenstackClient) instanceExists(machine *clusterv1.Machine) (instance 
 	return instanceList[0], nil
 }
 
-func (oc *OpenstackClient) createBootstrapToken() (string, error) {
+func (oc *OvirtClient) createBootstrapToken() (string, error) {
 	token, err := tokenutil.GenerateBootstrapToken()
 	if err != nil {
 		return "", err
@@ -424,7 +406,6 @@ func (oc *OpenstackClient) createBootstrapToken() (string, error) {
 	), nil
 }
 
-func (oc *OpenstackClient) validateMachine(machine *clusterv1.Machine, config *openstackconfigv1.OpenstackProviderSpec) *apierrors.MachineError {
-	// TODO: other validate of openstackCloud
+func (oc *OvirtClient) validateMachine(machine *clusterv1.Machine, config *ovirtconfigv1.OvirtMachineProviderSpec) *apierrors.MachineError {
 	return nil
 }

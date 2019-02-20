@@ -1,7 +1,8 @@
-url: https://ovirt-engine-fqdn/ovirt-engine/api
+url: https://rgolan.usersys.redhat.com:8443/ovirt-engine/api
 username: admin@internal
-password:
-cafile: 
+password: 123
+cafile: /dev/null
+insecure: true
 # Data Center
 datacenter: Default
 # Cluster

@@ -7,21 +7,21 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/utils/openstack/clientconfig"
+	providerv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
+	providerv1ovirt "github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 	"github.com/pkg/errors"
 	"k8s.io/klog"
-	providerv1 "sigs.k8s.io/cluster-api-provider-openstack/pkg/apis/openstackproviderconfig/v1alpha1"
-	providerv1openstack "sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/openstack"
-	"sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/openstack/clients"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 )
 
 // Actuator controls cluster related infrastructure.
 type Actuator struct {
-	params providerv1openstack.ActuatorParams
+	params providerv1ovirt.ActuatorParams
 }
 
 // NewActuator creates a new Actuator
-func NewActuator(params providerv1openstack.ActuatorParams) (*Actuator, error) {
+func NewActuator(params providerv1ovirt.ActuatorParams) (*Actuator, error) {
 	res := &Actuator{params: params}
 	return res, nil
 }
@@ -94,7 +94,7 @@ func (a *Actuator) Delete(cluster *clusterv1.Cluster) error {
 	return nil
 }
 
-func (a *Actuator) storeClusterStatus(cluster *clusterv1.Cluster, status *providerv1.OpenstackClusterProviderStatus) error {
+func (a *Actuator) storeClusterStatus(cluster *clusterv1.Cluster, status *providerv1.OvirtClusterProviderStatus) error {
 	ext, err := providerv1.EncodeClusterStatus(status)
 	if err != nil {
 		return fmt.Errorf("failed to update cluster status for cluster %q in namespace %q: %v", cluster.Name, cluster.Namespace, err)
