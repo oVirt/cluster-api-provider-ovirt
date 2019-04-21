@@ -1,8 +1,11 @@
 # Kubernetes cluster-api-provider-ovirt Project
 
-https://github.com/oVirt/cluster-api-provider-ovirt# NEEDS AN UPDATE - WIP
+https://github.com/oVirt/cluster-api-provider-ovirt
 
-This repository hosts a concrete implementation of an OpenStack provider for the [cluster-api project](https://github.com/kubernetes-sigs/cluster-api).
+# UNDER HEAVY DEVELOPMENT
+
+Implementation of the  oVirt provider for the [cluster-api project](https://github.com/kubernetes-sigs/cluster-api).
+
 
 ## Community, discussion, contribution, and support
 
@@ -11,7 +14,7 @@ Learn how to engage with the Kubernetes community on the [community page](http:/
 You can reach the maintainers of this project at:
 
 - [#cluster-api on Kubernetes Slack](http://kubernetes.slack.com/messages/cluster-api)
-- [SIG-Cluster-Lifecycle Mailing List](https://groups.google.com/forum/#!forum/kubernetes-sig-cluster-lifecycle)
+- [SIG-Cluster-Lifecycle Mailing List](https://groups.google.com/forum/#!forum/kubernetes-sig-cluster-lifecycle)/
 
 ### Code of conduct
 
@@ -27,11 +30,7 @@ Participation in the Kubernetes community is governed by the [Kubernetes Code of
 4. An appropriately configured [Go development environment](https://golang.org/doc/install)
 5. Build the `clusterctl` tool
 
-   ```bash
-   git clone https://github.com/kubernetes-sigs/cluster-api-provider-openstack $GOPATH/src/sigs.k8s.io/cluster-api-provider-openstack
-   cd $GOPATH/src/sigs.k8s.io/cluster-api-provider-openstack/cmd/clusterctl
-   go build
-   ```
+
 
 ### Cluster Creation
 
@@ -55,9 +54,6 @@ kubectl --kubeconfig=kubeconfig get machines -o yaml
 
 ### Cluster Deletion
 
-This guide explains how to delete all resources that were created as part of
-your openstack Cluster API Kubernetes cluster.
-
 1. Delete all of the node Machines in the cluster. Make sure to wait for the
   corresponding Nodes to be deleted before moving onto the next step. After this
   step, the master node will be the only remaining node.
@@ -75,5 +71,5 @@ your openstack Cluster API Kubernetes cluster.
 3. Delete the ssh keypair that were created for your cluster machine.
 
    ```bash
-   rm -rf $HOME/.ssh/openstack_tmp*
+   rm -rf $HOME/.ssh/ovirt_tmp*
    ```
