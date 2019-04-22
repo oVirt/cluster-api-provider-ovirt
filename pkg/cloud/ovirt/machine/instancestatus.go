@@ -36,8 +36,8 @@ const InstanceStatusAnnotationKey = "instance-status"
 type instanceStatus *clusterv1.Machine
 
 // Get the status of the instance identified by the given machine
-func (oc *OvirtClient) instanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
-	currentMachine, err := util.GetMachineIfExists(oc.client, machine.Namespace, machine.Name)
+func (ovirtClient *OvirtClient) instanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
+	currentMachine, err := util.GetMachineIfExists(ovirtClient.client, machine.Namespace, machine.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -46,13 +46,13 @@ func (oc *OvirtClient) instanceStatus(machine *clusterv1.Machine) (instanceStatu
 		// The current status no longer exists because the matching CRD has been deleted (or does not exist yet ie. bootstrapping)
 		return nil, nil
 	}
-	return oc.machineInstanceStatus(currentMachine)
+	return ovirtClient.machineInstanceStatus(currentMachine)
 }
 
 // Sets the status of the instance identified by the given machine to the given machine
-func (oc *OvirtClient) updateInstanceStatus(machine *clusterv1.Machine) error {
+func (ovirtClient *OvirtClient) updateInstanceStatus(machine *clusterv1.Machine) error {
 	status := instanceStatus(machine)
-	currentMachine, err := util.GetMachineIfExists(oc.client, machine.Namespace, machine.Name)
+	currentMachine, err := util.GetMachineIfExists(ovirtClient.client, machine.Namespace, machine.Name)
 	if err != nil {
 		return err
 	}
@@ -62,16 +62,16 @@ func (oc *OvirtClient) updateInstanceStatus(machine *clusterv1.Machine) error {
 		return fmt.Errorf("Machine has already been deleted. Cannot update current instance status for machine %v", machine.ObjectMeta.Name)
 	}
 
-	m, err := oc.setMachineInstanceStatus(currentMachine, status)
+	m, err := ovirtClient.setMachineInstanceStatus(currentMachine, status)
 	if err != nil {
 		return err
 	}
 
-	return oc.client.Update(nil, m)
+	return ovirtClient.client.Update(nil, m)
 }
 
 // Gets the state of the instance stored on the given machine CRD
-func (oc *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
+func (ovirtClient *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
 	if machine.ObjectMeta.Annotations == nil {
 		// No state
 		return nil, nil
@@ -83,7 +83,7 @@ func (oc *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine) (instan
 		return nil, nil
 	}
 
-	serializer := json.NewSerializer(json.DefaultMetaFactory, oc.scheme, oc.scheme, false)
+	serializer := json.NewSerializer(json.DefaultMetaFactory, ovirtClient.scheme, ovirtClient.scheme, false)
 	var status clusterv1.Machine
 	_, _, err := serializer.Decode([]byte(a), &schema.GroupVersionKind{Group: "cluster.k8s.io", Version: "v1alpha1", Kind: "Machine"}, &status)
 	if err != nil {
@@ -94,11 +94,11 @@ func (oc *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine) (instan
 }
 
 // Applies the state of an instance onto a given machine CRD
-func (oc *OvirtClient) setMachineInstanceStatus(machine *clusterv1.Machine, status instanceStatus) (*clusterv1.Machine, error) {
+func (ovirtClient *OvirtClient) setMachineInstanceStatus(machine *clusterv1.Machine, status instanceStatus) (*clusterv1.Machine, error) {
 	// Avoid status within status within status ...
 	status.ObjectMeta.Annotations[InstanceStatusAnnotationKey] = ""
 
-	serializer := json.NewSerializer(json.DefaultMetaFactory, oc.scheme, oc.scheme, false)
+	serializer := json.NewSerializer(json.DefaultMetaFactory, ovirtClient.scheme, ovirtClient.scheme, false)
 	b := []byte{}
 	buff := bytes.NewBuffer(b)
 	err := serializer.Encode((*clusterv1.Machine)(status), buff)

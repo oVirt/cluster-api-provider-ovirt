@@ -21,15 +21,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis"
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/cluster"
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis
 
 	"sigs.k8s.io/cluster-api/pkg/apis/cluster/common"
-
 
 	clusterapis "sigs.k8s.io/cluster-api/pkg/apis"
-	"sigs.k8s.io/cluster-api/pkg/apis/cluster/common"
 	"sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
 	capicluster "sigs.k8s.io/cluster-api/pkg/controller/cluster"
 	capimachine "sigs.k8s.io/cluster-api/pkg/controller/machine"
@@ -37,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
-
 )
 
 func main() {
