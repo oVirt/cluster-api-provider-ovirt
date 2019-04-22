@@ -8,3 +8,4 @@ bin/
 .idea/workspace.xml
 .idea/
 minikube
+docker-machine-driver-kvm2
