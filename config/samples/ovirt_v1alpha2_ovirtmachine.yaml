@@ -1,0 +1,7 @@
+apiVersion: ovirt.cluster.k8s.io/v1alpha2
+kind: OvirtMachine
+metadata:
+  name: ovirtmachine-sample
+spec:
+  # Add fields here
+  foo: bar

@@ -1,0 +1,10 @@
+version: "2"
+domain: cluster.k8s.io
+repo: github.com/oVirt/cluster-api-provider-ovirt
+resources:
+- group: ovirt
+  version: v1alpha2
+  kind: OvirtCluster
+- group: ovirt
+  version: v1alpha2
+  kind: OvirtMachine
