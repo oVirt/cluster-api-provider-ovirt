@@ -33,9 +33,10 @@ import (
 	tokenapi "k8s.io/cluster-bootstrap/token/api"
 	tokenutil "k8s.io/cluster-bootstrap/token/util"
 	"k8s.io/klog"
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
+	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
+	//machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	apierrors "sigs.k8s.io/cluster-api/pkg/errors"
-	"sigs.k8s.io/cluster-api/pkg/util"
+	"github.com/openshift/cluster-api/pkg/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -127,7 +128,7 @@ func (ovirtClient *OvirtClient) Create(ctx context.Context, cluster *clusterv1.C
 
 	var userDataRendered string
 	if len(userData) > 0 {
-		if util.IsMaster(machine) {
+		if machine.Spec.Versions.ControlPlane != "" {
 			userDataRendered, err = masterStartupScript(cluster, machine, string(userData))
 			if err != nil {
 				return ovirtClient.handleMachineError(machine, apierrors.CreateMachine(
@@ -220,7 +221,7 @@ func (ovirtClient *OvirtClient) Update(ctx context.Context, cluster *clusterv1.C
 		return nil
 	}
 
-	if util.IsMaster(currentMachine) {
+	if util.IsControlPlaneMachine(currentMachine) {
 		// TODO: add master inplace
 		klog.Errorf("master inplace update failed: %v", err)
 	} else {

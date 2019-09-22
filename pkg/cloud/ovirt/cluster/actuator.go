@@ -12,7 +12,7 @@ import (
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 	"github.com/pkg/errors"
 	"k8s.io/klog"
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
+	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 )
 
 // Actuator controls cluster related infrastructure.

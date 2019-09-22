@@ -18,13 +18,16 @@ package clients
 
 import (
 	"fmt"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/ovirtapi"
+
 	"gopkg.in/yaml.v2"
 	"k8s.io/client-go/kubernetes"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/ovirtapi"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
+	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
+	//machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
 )
 
 const CloudsSecretKey = "ovirt.conf"
@@ -91,7 +94,6 @@ func GetOvirtConnectionConf(kubeClient kubernetes.Interface, namespace string, s
 	return c, nil
 }
 
-// TODO: Eventually we'll have a NewInstanceServiceFromCluster too
 func NewInstanceServiceFromMachine(kubeClient kubernetes.Interface, machine *clusterv1.Machine) (*InstanceService, error) {
 	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {

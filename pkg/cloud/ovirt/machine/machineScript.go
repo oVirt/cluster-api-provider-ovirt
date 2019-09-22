@@ -19,12 +19,12 @@ package machine
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"text/template"
 
-	"fmt"
+	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 
 	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 )
 
 type setupParams struct {

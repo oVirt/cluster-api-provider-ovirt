@@ -1,5 +1,3 @@
-
-#GIT_HOST = sigs.k8s.io
 GIT_HOST = github.com/ovirt
 PWD := $(shell pwd)
 BASE_DIR := $(shell basename $(PWD))
@@ -30,9 +28,9 @@ TAGS      :=
 LDFLAGS   := "-w -s -X 'main.version=${VERSION}'"
 REGISTRY ?= quay.io/rgolangh
 
-ifneq ("$(realpath $(DEST))", "$(realpath $(PWD))")
-    $(error Please run 'make' from $(DEST). Current directory is $(PWD))
-endif
+#ifneq ("$(realpath $(DEST))", "$(realpath $(PWD))")
+#    $(error Please run 'make' from $(DEST). Current directory is $(PWD))
+#endif
 
 # CTI targets
 
