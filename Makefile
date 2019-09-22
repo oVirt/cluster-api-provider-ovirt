@@ -1,40 +1,27 @@
-
-#GIT_HOST = sigs.k8s.io
 GIT_HOST = github.com/ovirt
 PWD := $(shell pwd)
 BASE_DIR := $(shell basename $(PWD))
-# Keep an existing GOPATH, make a private one if it is undefined
-GOPATH_DEFAULT := $(PWD)/.go
-export GOPATH ?= $(GOPATH_DEFAULT)
-GOBIN_DEFAULT := $(GOPATH)/bin
-export GOBIN ?= $(GOBIN_DEFAULT)
 TESTARGS_DEFAULT := "-v"
 export TESTARGS ?= $(TESTARGS_DEFAULT)
-PKG := $(shell awk  -F "\"" '/^ignored = / { print $$2 }' Gopkg.toml)
-DEST := $(GOPATH)/src/$(GIT_HOST)/$(BASE_DIR)
-SOURCES := $(shell find $(DEST) -name '*.go')
 
-HAS_MERCURIAL := $(shell command -v hg;)
-HAS_DEP := $(shell command -v dep;)
 HAS_LINT := $(shell command -v golint;)
 HAS_GOX := $(shell command -v gox;)
 GOX_PARALLEL ?= 3
 TARGETS ?= darwin/amd64 linux/amd64 linux/386 linux/arm linux/arm64 linux/ppc64le
-DIST_DIRS         = find * -type d -exec
 
 GOOS ?= $(shell go env GOOS)
 VERSION ?= $(shell git describe --exact-match 2> /dev/null || \
                  git describe --match=$(git rev-parse --short=8 HEAD) --always --dirty --abbrev=8)
-GOFLAGS   :=
+GOFLAGS   += -mod vendor
 TAGS      :=
 LDFLAGS   := "-w -s -X 'main.version=${VERSION}'"
 REGISTRY ?= quay.io/rgolangh
 
-ifneq ("$(realpath $(DEST))", "$(realpath $(PWD))")
-    $(error Please run 'make' from $(DEST). Current directory is $(PWD))
-endif
-
-# CTI targets
+.PHONY: vendor
+vendor:
+		go mod tidy
+		go mod vendor
+		go mod verify
 
 $(GOBIN):
 	echo "create gobin"
@@ -42,28 +29,13 @@ $(GOBIN):
 
 work: $(GOBIN)
 
-depend: work
-ifndef HAS_DEP
-	curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-endif
-	dep ensure
-
-depend-update: work
-	dep ensure -update
-
-build: manager clusterctl
+build: manager
 
 manager:
 	CGO_ENABLED=0 GOOS=$(GOOS) go build \
 		-ldflags $(LDFLAGS) \
 		-o bin/manager \
 		cmd/manager/main.go
-
-clusterctl:
-	CGO_ENABLED=0 GOOS=$(GOOS) go build \
-		-ldflags $(LDFLAGS) \
-		-o bin/clusterctl \
-		cmd/clusterctl/main.go
 
 test: unit functional
 
@@ -135,6 +107,7 @@ generate:
 images: ovirt-cluster-api-controller
 
 ovirt-cluster-api-controller: manager
+
 ifeq ($(GOOS),linux)
 	cp bin/manager cmd/manager
 	docker build -t $(REGISTRY)/ovirt-cluster-api-controller:$(VERSION) cmd/manager

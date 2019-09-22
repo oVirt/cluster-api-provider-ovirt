@@ -18,13 +18,17 @@ package clients
 
 import (
 	"fmt"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/ovirtapi"
-	"gopkg.in/yaml.v2"
+	"strconv"
+
 	"k8s.io/client-go/kubernetes"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/ovirtapi"
+
+	//clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
+	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
+
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
 )
 
 const CloudsSecretKey = "ovirt.conf"
@@ -51,53 +55,39 @@ type SshKeyPair struct {
 }
 
 type InstanceListOpts struct {
-	// Name of the image in URL format.
-	Image string `q:"image"`
-
-	// Name of the flavor in URL format.
-	Flavor string `q:"flavor"`
-
-	// Name of the server as a string; can be queried with regular expressions.
-	// Realize that ?name=bob returns both bob and bobb. If you need to match bob
-	// only, you can use a regular expression matching the syntax of the
-	// underlying database server implemented for Compute.
-	Name string `q:"name"`
+	Name string `json:"name"`
 }
 
 func GetOvirtConnectionConf(kubeClient kubernetes.Interface, namespace string, secretName string) (ovirtapi.Connection, error) {
-	zeroConf := ovirtapi.Connection{}
-
-	if secretName == "" {
-		return zeroConf, nil
-	}
 
 	secret, err := kubeClient.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
 	if err != nil {
-		return zeroConf, err
+		return ovirtapi.Connection{}, err
 	}
 
-	content, ok := secret.Data[CloudsSecretKey]
-	if !ok {
-		return zeroConf, fmt.Errorf("oVirt credentials secret %v did not contain key %v",
-			secretName, CloudsSecretKey)
+	url, _ := secret.StringData["engine_url"]
+	username, _ := secret.StringData["engine_username"]
+	password, _ := secret.StringData["engine_password"]
+	insecure, _ := strconv.ParseBool(secret.StringData["engine_insecure"])
+	cafile, _ := secret.StringData["engine_insecure"]
+
+	ovirtconf := ovirtapi.Connection{
+		Url:      url,
+		Username: username,
+		Password: password,
+		Insecure: insecure,
+		CAFile:   cafile,
 	}
 
-	var c = ovirtapi.Connection{}
-	err = yaml.Unmarshal(content, &c)
-	if err != nil {
-		return zeroConf, fmt.Errorf("failed to unmarshal clouds credentials stored in secret %v: %v", secretName, err)
-	}
-
-	return c, nil
+	return ovirtconf, nil
 }
 
-// TODO: Eventually we'll have a NewInstanceServiceFromCluster too
-func NewInstanceServiceFromMachine(kubeClient kubernetes.Interface, machine *clusterv1.Machine) (*InstanceService, error) {
+func NewInstanceServiceFromMachine(kubeClient kubernetes.Interface, machine *machinev1.Machine) (*InstanceService, error) {
 	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {
 		return nil, err
 	}
-	connection, err := GetOvirtConnectionConf(kubeClient, machine.Namespace, machineSpec.CloudsSecret)
+	connection, err := GetOvirtConnectionConf(kubeClient, machine.Namespace, machineSpec.CredentialsSecret.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +108,12 @@ func NewInstanceServiceFromConf(connection ovirtapi.Connection) (*InstanceServic
 	return &InstanceService{ovirtApi: ovirtApi}, nil
 }
 
-func (is *InstanceService) InstanceCreate(name string, config *ovirtconfigv1.OvirtMachineProviderSpec, cmd string, keyName string) (instance *Instance, err error) {
+func (is *InstanceService) InstanceCreate(name string, config *ovirtconfigv1.OvirtMachineProviderSpec) (instance *Instance, err error) {
 	if config == nil {
 		return nil, fmt.Errorf("create Options need be specified to create instace")
 	}
 	create, err := is.ovirtApi.Post("vms", ovirtapi.VM{
-		Name: name,
+		Name: config.Name,
 		Cluster: ovirtapi.NameId{Name: "Default"},
 		Template: ovirtapi.NameId{Name: "Blank"},
 	})

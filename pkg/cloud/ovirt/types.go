@@ -23,6 +23,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	OvirtIdAnnotationKey = "VmId"
+)
 // ActuatorParams holds parameter information for Actuator
 type ActuatorParams struct {
 	KubeClient    kubernetes.Interface

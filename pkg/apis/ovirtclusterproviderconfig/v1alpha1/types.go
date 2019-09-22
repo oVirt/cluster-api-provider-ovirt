@@ -19,7 +19,6 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	//"k8s.io/apimachinery/pkg/runtime"
 )
 
 // +genclient
@@ -29,61 +28,20 @@ import (
 // for an Ovirt VM. It is used by the Ovirt machine actuator to create a single machine instance.
 type OvirtMachineProviderSpec struct {
 	metav1.TypeMeta `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// The name of the secret containing the openstack credentials
-	CloudsSecret string `json:"ovirtSecret"`
+	// CredentialsSecret is a reference to the secret with oVirt credentials.
+	CredentialsSecret *corev1.LocalObjectReference `json:"credentialsSecret,omitempty"`
 
-	// The flavor reference for the flavor for your server instance.
-	Flavor string `json:"flavor"`
-	// The name of the image to use for your server instance.
-	Image string `json:"image"`
+	Id string `json:"id"`
+	Name string `json:"name"`
+	// The VM template this instance will be created from
+	TemplateId string `json:"template_id"`
 
-	// The ssh key to inject in the instance
-	KeyName string `json:"keyName,omitempty"`
+	// the oVirt cluster this VM instance belongs too
+	ClusterId string `json:"cluster_id"`
 
-	// The machine ssh username
-	SshUserName string `json:"sshUserName,omitempty"`
 
-	// A networks object. Required parameter when there are multiple networks defined for the tenant.
-	// When you do not specify the networks parameter, the server attaches to the only network created for the current tenant.
-	Networks []NetworkParam `json:"networks,omitempty"`
-
-	// The name of the secret containing the user data (startup script in most cases)
-	UserDataSecret *corev1.SecretReference `json:"userDataSecret,omitempty"`
-
-	RootVolume RootVolume `json:"root_volume,omitempty"`
-}
-
-type NetworkParam struct {
-	// The UUID of the network. Required if you omit the port attribute.
-	UUID string `json:"uuid,omitempty"`
-	// A fixed IPv4 address for the NIC.
-	FixedIp string `json:"fixed_ip,omitempty"`
-	// Filters for optional network query
-	Filter Filter `json:"filter,omitempty"`
-}
-
-type Filter struct {
-	Status       string `json:"status,omitempty"`
-	Name         string `json:"name,omitempty"`
-	AdminStateUp *bool  `json:"admin_state_up,omitempty"`
-	TenantID     string `json:"tenant_id,omitempty"`
-	ProjectID    string `json:"project_id,omitempty"`
-	Shared       *bool  `json:"shared,omitempty"`
-	ID           string `json:"id,omitempty"`
-	Marker       string `json:"marker,omitempty"`
-	Limit        int    `json:"limit,omitempty"`
-	SortKey      string `json:"sort_key,omitempty"`
-	SortDir      string `json:"sort_dir,omitempty"`
-	Tags         string `json:"tags,omitempty"`
-	TagsAny      string `json:"tags-any,omitempty"`
-	NotTags      string `json:"not-tags,omitempty"`
-	NotTagsAny   string `json:"not-tags-any,omitempty"`
-}
-
-type RootVolume struct {
-	VolumeType string `json:"volumeType"`
-	Size       int    `json:"diskSize,omitempty"`
 }
 
 // +genclient
@@ -94,10 +52,6 @@ type RootVolume struct {
 type OvirtClusterProviderSpec struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	// ExternalNetworkID is the ID of an external OpenStack Network. This is necessary
-	// to get public internet to the VMs.
-	ExternalNetworkID string `json:"externalNetworkId,omitempty"`
 }
 
 // +genclient
@@ -117,30 +71,6 @@ type OvirtClusterProviderStatus struct {
 
 	// Network contains all information about the created OpenStack Network.
 	// It includes Subnets and Router.
-	Network *Network `json:"network,omitempty"`
-}
-
-// Network
-type Network struct {
-	Name string `json:"name"`
-	ID   string `json:"id"`
-
-	Subnet *Subnet `json:"subnet,omitempty"`
-	Router *Router `json:"router,omitempty"`
-}
-
-// Subnet
-type Subnet struct {
-	Name string `json:"name"`
-	ID   string `json:"id"`
-
-	CIDR string `json:"cidr"`
-}
-
-// Router represents basic information about the associated OpenStack Neutron Router
-type Router struct {
-	Name string `json:"name"`
-	ID   string `json:"id"`
 }
 
 func init() {

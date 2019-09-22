@@ -23,8 +23,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
-	"sigs.k8s.io/cluster-api/pkg/util"
+	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
+	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	"github.com/openshift/cluster-api/pkg/util"
 )
 
 // Long term, we should retrieve the current status by asking k8s, openstack etc. for all the needed info.
@@ -33,10 +34,10 @@ import (
 
 const InstanceStatusAnnotationKey = "instance-status"
 
-type instanceStatus *clusterv1.Machine
+type instanceStatus *machinev1.Machine
 
 // Get the status of the instance identified by the given machine
-func (ovirtClient *OvirtClient) instanceStatus(machine *clusterv1.Machine) (instanceStatus, error) {
+func (ovirtClient *OvirtClient) instanceStatus(machine *machinev1.Machine) (instanceStatus, error) {
 	currentMachine, err := util.GetMachineIfExists(ovirtClient.client, machine.Namespace, machine.Name)
 	if err != nil {
 		return nil, err
@@ -50,7 +51,7 @@ func (ovirtClient *OvirtClient) instanceStatus(machine *clusterv1.Machine) (inst
 }
 
 // Sets the status of the instance identified by the given machine to the given machine
-func (ovirtClient *OvirtClient) updateInstanceStatus(machine *clusterv1.Machine) error {
+func (ovirtClient *OvirtClient) updateInstanceStatus(machine *machinev1.Machine) error {
 	status := instanceStatus(machine)
 	currentMachine, err := util.GetMachineIfExists(ovirtClient.client, machine.Namespace, machine.Name)
 	if err != nil {
@@ -84,13 +85,13 @@ func (ovirtClient *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine
 	}
 
 	serializer := json.NewSerializer(json.DefaultMetaFactory, ovirtClient.scheme, ovirtClient.scheme, false)
-	var status clusterv1.Machine
+	var status machinev1.Machine
 	_, _, err := serializer.Decode([]byte(a), &schema.GroupVersionKind{Group: "cluster.k8s.io", Version: "v1alpha1", Kind: "Machine"}, &status)
 	if err != nil {
 		return nil, fmt.Errorf("decoding failure: %v", err)
 	}
 
-	return instanceStatus(&status), nil
+	return &status, nil
 }
 
 // Applies the state of an instance onto a given machine CRD
@@ -101,7 +102,7 @@ func (ovirtClient *OvirtClient) setMachineInstanceStatus(machine *clusterv1.Mach
 	serializer := json.NewSerializer(json.DefaultMetaFactory, ovirtClient.scheme, ovirtClient.scheme, false)
 	b := []byte{}
 	buff := bytes.NewBuffer(b)
-	err := serializer.Encode((*clusterv1.Machine)(status), buff)
+	err := serializer.Encode((*machinev1.Machine)(status), buff)
 	if err != nil {
 		return nil, fmt.Errorf("encoding failure: %v", err)
 	}

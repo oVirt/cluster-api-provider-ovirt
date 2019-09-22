@@ -25,8 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/json"
 	"sigs.k8s.io/yaml"
 
-	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/scheme"
+	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
 const GroupName = "ovirtclusterproviderconfig"
@@ -40,7 +40,7 @@ var (
 )
 
 // ClusterConfigFromProviderSpec unmarshals a provider config into an Ovirt Cluster type
-func ClusterSpecFromProviderSpec(providerSpec clusterv1.ProviderSpec) (*OvirtClusterProviderSpec, error) {
+func ClusterSpecFromProviderSpec(providerSpec machinev1.ProviderSpec) (*OvirtClusterProviderSpec, error) {
 	if providerSpec.Value == nil {
 		return nil, errors.New("no such providerSpec found in manifest")
 	}
@@ -68,7 +68,7 @@ func ClusterStatusFromProviderStatus(extension *runtime.RawExtension) (*OvirtClu
 
 // This is the same as ClusterSpecFromProviderSpec but we
 // expect there to be a specific Spec type for Machines soon
-func MachineSpecFromProviderSpec(providerSpec clusterv1.ProviderSpec) (*OvirtMachineProviderSpec, error) {
+func MachineSpecFromProviderSpec(providerSpec machinev1.ProviderSpec) (*OvirtMachineProviderSpec, error) {
 	if providerSpec.Value == nil {
 		return nil, errors.New("no such providerSpec found in manifest")
 	}

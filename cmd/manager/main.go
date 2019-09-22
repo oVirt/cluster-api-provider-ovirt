@@ -21,16 +21,14 @@ import (
 	"fmt"
 	"os"
 
+	"k8s.io/klog"
+
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/cluster"
+	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
 
-	"sigs.k8s.io/cluster-api/pkg/apis/cluster/common"
-
-	clusterapis "sigs.k8s.io/cluster-api/pkg/apis"
-	"sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
-	capicluster "sigs.k8s.io/cluster-api/pkg/controller/cluster"
-	capimachine "sigs.k8s.io/cluster-api/pkg/controller/machine"
+	clusterapis "github.com/openshift/cluster-api/pkg/apis"
+	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
@@ -38,44 +36,48 @@ import (
 )
 
 func main() {
+	klog.InitFlags(nil)
+
+	watchNamespace := flag.String("namespace", "", "Namespace that the controller watches to reconcile machine-api objects. If unspecified, the controller watches for machine-api objects across all namespaces.")
+	metricsAddr := flag.String("metrics-addr", ":8080", "The address the metric endpoint binds to.")
+	flag.Parse()
+
+	flag.Parse()
+	log := logf.Log.WithName("ovirt-controller-manager")
+	logf.SetLogger(logf.ZapLogger(false))
+	entryLog := log.WithName("entrypoint")
+
 	cfg := config.GetConfigOrDie()
 	if cfg == nil {
 		panic(fmt.Errorf("GetConfigOrDie didn't die"))
 	}
 
-	flag.Parse()
-	log := logf.Log.WithName("solas-controller-manager")
-	logf.SetLogger(logf.ZapLogger(false))
-	entryLog := log.WithName("entrypoint")
-
 	// Setup a Manager
-	mgr, err := manager.New(cfg, manager.Options{})
+	opts := manager.Options{
+		MetricsBindAddress: *metricsAddr,
+	}
+	if *watchNamespace != "" {
+		opts.Namespace = *watchNamespace
+		klog.Infof("Watching machine-api objects only in namespace %q for reconciliation.", opts.Namespace)
+	}
+
+	mgr, err := manager.New(cfg, opts)
 	if err != nil {
 		entryLog.Error(err, "unable to set up overall controller manager")
 		os.Exit(1)
 	}
 
-	cs, err := clientset.NewForConfig(cfg)
 	if err != nil {
-		panic(err)
+		entryLog.Error(err, "unable to set up overall controller manager")
+		os.Exit(1)
 	}
 
-	clusterActuator, err := cluster.NewActuator(cluster.ActuatorParams{
-		ClustersGetter: cs.ClusterV1alpha1(),
+	machineActuator, err := machine.NewActuator(ovirt.ActuatorParams{
+		Client: mgr.GetClient(),
 	})
 	if err != nil {
 		panic(err)
 	}
-
-	machineActuator, err := machine.NewActuator(machine.ActuatorParams{
-		MachinesGetter: cs.ClusterV1alpha1(),
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	// Register our cluster deployer (the interface is in clusterctl and we define the Deployer interface on the actuator)
-	common.RegisterClusterProvisioner("solas", clusterActuator)
 
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
 		panic(err)
@@ -86,8 +88,6 @@ func main() {
 	}
 
 	capimachine.AddWithActuator(mgr, machineActuator)
-
-	capicluster.AddWithActuator(mgr, clusterActuator)
 
 	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
 		entryLog.Error(err, "unable to run manager")
