@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/klog"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
@@ -40,9 +41,11 @@ type instanceStatus *machinev1.Machine
 func (ovirtClient *OvirtClient) instanceStatus(machine *machinev1.Machine) (instanceStatus, error) {
 	currentMachine, err := util.GetMachineIfExists(ovirtClient.client, machine.Namespace, machine.Name)
 	if err != nil {
+		klog.Errorf("Didn't find mahine with namespace: %s and name: %s", machine.Namespace, machine.Name)
 		return nil, err
 	}
 
+	klog.Infof("Found machine %v", currentMachine)
 	if currentMachine == nil {
 		// The current status no longer exists because the matching CRD has been deleted (or does not exist yet ie. bootstrapping)
 		return nil, nil
@@ -86,7 +89,7 @@ func (ovirtClient *OvirtClient) machineInstanceStatus(machine *clusterv1.Machine
 
 	serializer := json.NewSerializer(json.DefaultMetaFactory, ovirtClient.scheme, ovirtClient.scheme, false)
 	var status machinev1.Machine
-	_, _, err := serializer.Decode([]byte(a), &schema.GroupVersionKind{Group: "cluster.k8s.io", Version: "v1alpha1", Kind: "Machine"}, &status)
+	_, _, err := serializer.Decode([]byte(a), &schema.GroupVersionKind{Group: "cluster.k8s.io", Version: "v1beta1", Kind: "Machine"}, &status)
 	if err != nil {
 		return nil, fmt.Errorf("decoding failure: %v", err)
 	}

@@ -30,10 +30,17 @@ type OvirtMachineProviderSpec struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// UserDataSecret contains a local reference to a secret that contains the
+	// UserData to apply to the instance
+	UserDataSecret *corev1.LocalObjectReference `json:"userDataSecret,omitempty"`
+
 	// CredentialsSecret is a reference to the secret with oVirt credentials.
 	CredentialsSecret *corev1.LocalObjectReference `json:"credentialsSecret,omitempty"`
 
+	// Id is the UUID of the VM
 	Id string `json:"id"`
+
+	// Name is the VM name
 	Name string `json:"name"`
 	// The VM template this instance will be created from
 	TemplateId string `json:"template_id"`

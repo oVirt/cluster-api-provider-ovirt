@@ -24,6 +24,8 @@ import (
 
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	ovirtsdk "github.com/ovirt/go-ovirt"
+	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog"
 
@@ -62,9 +64,7 @@ func NewActuator(params ovirt.ActuatorParams) (*OvirtClient, error) {
 }
 
 func (ovirtClient *OvirtClient) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
-	kubeClient := ovirtClient.params.KubeClient
-
-	machineService, err := clients.NewInstanceServiceFromMachine(kubeClient, machine)
+	machineService, err := clients.NewInstanceServiceFromMachine(machine)
 	if err != nil {
 		return err
 	}
@@ -95,11 +95,11 @@ func (ovirtClient *OvirtClient) Create(ctx context.Context, cluster *clusterv1.C
 	}
 	// TODO: wait instance ready
 	err = util.PollImmediate(RetryIntervalInstanceStatus, TimeoutInstanceCreate, func() (bool, error) {
-		instance, err := machineService.GetInstance(instance.Id)
+		instance, err := machineService.GetInstance(instance.MustId())
 		if err != nil {
 			return false, nil
 		}
-		return instance.Status == "ACTIVE", nil
+		return instance.MustStatus() == ovirtsdk.VMSTATUS_UP, nil
 	})
 	if err != nil {
 		return ovirtClient.handleMachineError(machine, apierrors.CreateMachine(
@@ -107,11 +107,11 @@ func (ovirtClient *OvirtClient) Create(ctx context.Context, cluster *clusterv1.C
 	}
 
 
-	return ovirtClient.updateAnnotation(machine, instance.Id)
+	return ovirtClient.updateAnnotation(machine, instance.MustId())
 }
 
 func (ovirtClient *OvirtClient) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
-	machineService, err := clients.NewInstanceServiceFromMachine(ovirtClient.params.KubeClient, machine)
+	machineService, err := clients.NewInstanceServiceFromMachine(machine)
 	if err != nil {
 		return err
 	}
@@ -137,6 +137,7 @@ func (ovirtClient *OvirtClient) Delete(ctx context.Context, cluster *clusterv1.C
 }
 
 func (ovirtClient *OvirtClient) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+	klog.Infof("About to update machine %s", machine.Name)
 	status, err := ovirtClient.instanceStatus(machine)
 	if err != nil {
 		return err
@@ -148,9 +149,9 @@ func (ovirtClient *OvirtClient) Update(ctx context.Context, cluster *clusterv1.C
 		if err != nil {
 			return err
 		}
-		if instance != nil && instance.Status == "ACTIVE" {
+		if instance != nil && instance.MustStatus() == ovirtsdk.VMSTATUS_UP {
 			klog.Infof("Populating current state for boostrap machine %v", machine.ObjectMeta.Name)
-			return ovirtClient.updateAnnotation(machine, instance.Id)
+			return ovirtClient.updateAnnotation(machine, instance.MustId())
 		} else {
 			return fmt.Errorf("Cannot retrieve current state to update machine %v", machine.ObjectMeta.Name)
 		}
@@ -183,32 +184,38 @@ func (ovirtClient *OvirtClient) Exists(ctx context.Context, cluster *clusterv1.C
 	return instance != nil, err
 }
 
-func getIPFromInstance(instance *clients.Instance) (string, error) {
+func getIPFromInstance(instance *clients.Instance) ([]string, error) {
 	type networkInterface struct {
 		Address string  `json:"addr"`
 		Version float64 `json:"version"`
 		Type    string  `json:"OS-EXT-IPS:type"`
 	}
 
-	if len(instance.Nics.Nics) == 0 {
-		return "", fmt.Errorf("the instance %s has no reported interaces", instance.Name)
+	nics, ok := instance.Nics()
+	if !ok {
+		return nil, errors.New("There are no reported nics")
 	}
 
+	var addresses []string
 	// The ovirt-guest agent reports all ips. It is possible to blacklist
 	// some devices from the report. Specifically to get the public ip address
 	// we don't have a reliable way other than heuristics to get an accessible public ip
 	// possibly match it against the current network
-	for _, nic := range instance.Nics.Nics {
-			for _, device := range nic.Devices.Devices {
-				for _, ip := range  device.Ips.Ips {
-					if ip.Version == "v4" {
-						return ip.Address, nil
+	for _, nic := range nics.Slice() {
+		if devices, ok := nic.ReportedDevices(); ok {
+			for _, device := range devices.Slice() {
+				if ips, ok := device.Ips(); ok {
+					for _, ip := range ips.Slice() {
+						if address, ok := ip.Address(); ok {
+							addresses = append(addresses, address)
+						}
 					}
 				}
 			}
+		}
 	}
 
-	return "", fmt.Errorf("extract IP from instance err")
+	return addresses, nil
 }
 
 // If the OvirtClient has a client for updating Machine objects, this will set
@@ -259,7 +266,7 @@ func (ovirtClient *OvirtClient) instanceExists(machine *machinev1.Machine) (inst
 		Name:   machineSpec.Name,
 	}
 
-	machineService, err := clients.NewInstanceServiceFromMachine(ovirtClient.params.KubeClient, machine)
+	machineService, err := clients.NewInstanceServiceFromMachine(machine)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +278,14 @@ func (ovirtClient *OvirtClient) instanceExists(machine *machinev1.Machine) (inst
 	if len(instanceList) == 0 {
 		return nil, nil
 	}
-	return instanceList[0], nil
+	for _, vm := range instanceList {
+		if name, ok := vm.Name(); ok {
+			if name == machine.Name {
+				return vm, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 func (ovirtClient *OvirtClient) validateMachine(machine *machinev1.Machine, config *ovirtconfigv1.OvirtMachineProviderSpec) *apierrors.MachineError {

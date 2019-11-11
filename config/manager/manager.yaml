@@ -30,7 +30,7 @@ metadata:
   namespace: ovirt-cluster-provider-system
 data:
   OS_CLOUD: >
-    url: https://rgolan.usersys.redhat.com:8443/ovirt-engine/api
+    url: https://ovirt-engine-fqdn/ovirt-engine/api
     username: admin@internal
     password: 123
     cafile: /dev/null

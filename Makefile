@@ -15,13 +15,17 @@ VERSION ?= $(shell git describe --exact-match 2> /dev/null || \
 GOFLAGS   += -mod vendor
 TAGS      :=
 LDFLAGS   := "-w -s -X 'main.version=${VERSION}'"
-REGISTRY ?= quay.io/rgolangh
+REGISTRY ?= quay.io/ovirt
+
+VERSION?=$(shell git describe --tags --always --match "v[0-9]*" | awk -F'-' '{print substr($$1,2) }')
+RELEASE?=$(shell git describe --tags --always --match "v[0-9]*" | awk -F'-' '{if ($$2 != "") {print $$2 "." $$3} else {print 1}}')
+VERSION_RELEASE=$(VERSION)$(if $(RELEASE),-$(RELEASE))
 
 .PHONY: vendor
 vendor:
-		go mod tidy
-		go mod vendor
-		go mod verify
+	go mod tidy
+	go mod vendor
+	go mod verify
 
 $(GOBIN):
 	echo "create gobin"
@@ -29,12 +33,15 @@ $(GOBIN):
 
 work: $(GOBIN)
 
-build: manager
-
-manager:
+build: export BUILDAH_LAYERS=true
+build:
 	CGO_ENABLED=0 GOOS=$(GOOS) go build \
 		-ldflags $(LDFLAGS) \
 		-o bin/manager \
+		cmd/manager/main.go
+	CGO_ENABLED=0 GOOS=$(GOOS) go build \
+		-ldflags $(LDFLAGS) \
+		-o bin/machine-controller-manager \
 		cmd/manager/main.go
 
 test: unit functional
@@ -104,7 +111,14 @@ shell:
 generate:
 	go generate ./pkg/... ./cmd/...
 
-images: ovirt-cluster-api-controller
+DOCKERFILE=Dockerfile
+images:
+	podman build \
+		-t $(REGISTRY)/cluster-api-provider-ovirt:$(VERSION_RELEASE) \
+		--build-arg version=$(VERSION) \
+		--build-arg release=$(RELEASE) \
+		-f $(DOCKERFILE) \
+		$(DIR)
 
 ovirt-cluster-api-controller: manager
 
