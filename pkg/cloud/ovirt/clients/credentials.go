@@ -1,29 +1,75 @@
+/*
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
+*/
+
 package clients
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
-	apicorev1 "k8s.io/api/core/v1"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
 
-	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	apicorev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
 )
 
-func getCredentialsSecret(coreClient client.Client, machine machinev1.Machine, spec v1alpha1.OvirtMachineProviderSpec) (map[string][]byte, error) {
-	if spec.CredentialsSecret == nil {
-		return nil, nil
-	}
-	var credentialsSecret apicorev1.Secret
+type OvirtCreds struct {
+	URL      string
+	Username string
+	Password string
+	CAFile   string
+}
 
-	if err := coreClient.Get(context.Background(), client.ObjectKey{Namespace: machine.GetNamespace(), Name: spec.CredentialsSecret.Name}, &credentialsSecret); err != nil {
+func GetCredentialsSecret(coreClient client.Client, namespace string, secretName string) (OvirtCreds, error) {
+	var credentialsSecret apicorev1.Secret
+	key := client.ObjectKey{Namespace: namespace, Name: secretName}
+
+	if err := coreClient.Get(context.Background(), key, &credentialsSecret); err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("error getting credentials secret %q in namespace %q: %v", spec.CredentialsSecret.Name, machine.GetNamespace(), err)
+			return OvirtCreds{}, fmt.Errorf("error getting credentials secret %q in namespace %q: %v", secretName, namespace, err)
 		}
 	}
 
-	return credentialsSecret.Data, nil
+	o := OvirtCreds{}
+	o.URL = string(credentialsSecret.Data["ovirt_url"])
+	o.Username = string(credentialsSecret.Data["ovirt_username"])
+	o.Password = string(credentialsSecret.Data["ovirt_password"])
+	o.CAFile = string(credentialsSecret.Data["ovirt_cafile"])
+	if o.CAFile == "" {
+		cafile, err := fetchCAPathFromURL(o.URL)
+		if err != nil {
+			return OvirtCreds{}, err
+		}
+		o.CAFile = cafile
+	}
+	return o, nil
 }
 
+func fetchCAPathFromURL(engineUrl string) (string, error){
+	client := http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	certURL, _ := url.Parse(engineUrl)
+	certURL.Path = "ovirt-engine/services/pki-resource"
+	certURL.RawQuery = url.PathEscape("resource=ca-certificate&format=X509-PEM-CA")
+
+	resp, err := client.Get(certURL.String())
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("error downloading ovirt-engine certificate %s with status %v", err, resp)
+	}
+
+	file, err := os.Create("/tmp/ovirt-engine.ca")
+	if err != nil {
+		return "", fmt.Errorf("failed writing ovirt-engine certificate %s", err)
+	}
+	io.Copy(file, resp.Body)
+	defer file.Close()
+	return file.Name(), nil
+
+
+
+}

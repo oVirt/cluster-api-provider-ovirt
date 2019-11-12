@@ -5,9 +5,9 @@ metadata:
   creationTimestamp: null
   labels:
     controller-tools.k8s.io: "1.0"
-  name: ovirtclusterproviderspecs.ovirtclusterproviderconfig.k8s.io
+  name: ovirtclusterproviderspecs.ovirtprovider.k8s.io
 spec:
-  group: ovirtclusterproviderconfig.k8s.io
+  group: ovirtprovider.k8s.io
   names:
     kind: OvirtProviderSpec
     plural: ovirtproviderspecs

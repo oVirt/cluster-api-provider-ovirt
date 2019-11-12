@@ -1,17 +1,6 @@
 /*
-Copyright 2018 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
 */
 
 package clients
@@ -23,24 +12,26 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
+	"github.com/openshift/cluster-api/pkg/util"
 	"github.com/pkg/errors"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
 	ovirtsdk "github.com/ovirt/go-ovirt"
 
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/ovirtapi"
-
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
 )
 
 type InstanceService struct {
-	Connection *ovirtsdk.Connection
-	ClusterId  string
-	TemplateId string
-	MachineName string
+	Connection   *ovirtsdk.Connection
+	ClusterId    string
+	TemplateName string
+	MachineName  string
 }
 
 type Instance struct {
@@ -64,105 +55,93 @@ type InstanceListOpts struct {
 	Name string `json:"name"`
 }
 
-func GetOvirtConnectionConf() (ovirtapi.Connection, error) {
+func GetOvirtConnectionConf() (*ovirtsdk.ConnectionBuilder, error) {
 
 	//// expecting ovirt-config.yaml at ~/.ovirt/ovirt-config.yaml or at env VAR OVIRT_CONFIG
 	//file, err := os.Open("~/.ovirt/ovirt-config.yaml")
-	//if err != nil {
-	//	return ovirtapi.Connection{}, err
-	//}
-	//in, err := ioutil.ReadAll(file)
-	//if err != nil {
-	//	return ovirtapi.Connection{}, err
-	//}
-	//out := ovirtapi.Connection{}
-	//
-	//err = yaml.Unmarshal(in, &out)
-	//if err != nil {
-	//	return ovirtapi.Connection{}, err
-	//}
 
+	//getCredentialsSecret()
+	connectionBuilder := ovirtsdk.NewConnectionBuilder()
 
 	// just for debug
 	//klog.Infof("the ovirt config loaded is: %v", out)
-	ovirtconf := ovirtapi.Connection{
-		Url:      "https://rgolan.usersys.redhat.com:8443/ovirt-engine/api",
-		Username: "admin@internal",
-		Password: "123",
-		CAFile:   "",
-	}
+	engineUrl := "https://rgolan.usersys.redhat.com:8443/ovirt-engine/api"
+	connectionBuilder.
+		URL(engineUrl).
+		Username("admin@internal").
+		Password("123").
+		CAFile("")
 
 	client := http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	certURL, _ := url.Parse(ovirtconf.Url)
+	certURL, _ := url.Parse(engineUrl)
 	certURL.Path = "ovirt-engine/services/pki-resource"
 	certURL.RawQuery = url.PathEscape("resource=ca-certificate&format=X509-PEM-CA")
 
 	resp, err := client.Get(certURL.String())
 	if err != nil || resp.StatusCode != http.StatusOK {
-		return ovirtconf, fmt.Errorf("error downloading ovirt-engine certificate %s with status %v", err, resp)
+		return connectionBuilder, fmt.Errorf("error downloading ovirt-engine certificate %s with status %v", err, resp)
 	}
 	defer resp.Body.Close()
 
 	file, err := os.Create("/tmp/ovirt-engine.ca")
 	if err != nil {
-		return ovirtconf, fmt.Errorf("failed writing ovirt-engine certificate %s", err)
+		return connectionBuilder, fmt.Errorf("failed writing ovirt-engine certificate %s", err)
 	}
 	io.Copy(file, resp.Body)
-	ovirtconf.CAFile = file.Name()
-	return ovirtconf, nil
+	connectionBuilder.CAFile(file.Name())
+	return connectionBuilder, nil
 }
 
-func NewInstanceServiceFromMachine(machine *machinev1.Machine) (*InstanceService, error) {
+func NewInstanceServiceFromMachine(machine *machinev1.Machine, connection *ovirtsdk.Connection) (*InstanceService, error) {
 	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	//getCredentialsSecret()
-	connection, err := GetOvirtConnectionConf()
-	if err != nil {
-		return nil, err
-	}
-	service, err := NewInstanceServiceFromConf(connection)
+	service := &InstanceService{Connection: connection}
 	service.ClusterId = machineSpec.ClusterId
-	service.TemplateId = machineSpec.TemplateId
+	service.TemplateName = machineSpec.TemplateName
 	service.MachineName = machine.Name
 	return service, err
 }
 
-func NewInstanceService() (*InstanceService, error) {
-	return NewInstanceServiceFromConf(ovirtapi.Connection{})
-}
+func (is *InstanceService) InstanceCreate(
+	machine *machinev1.Machine,
+	providerSpec *ovirtconfigv1.OvirtMachineProviderSpec,
+	kubeClient *kubernetes.Clientset) (instance *Instance, err error) {
 
-func NewInstanceServiceFromConf(connection ovirtapi.Connection) (*InstanceService, error) {
-
-	con, err := ovirtsdk.NewConnectionBuilder().
-		URL(connection.Url).
-		Username(connection.Username).
-		Password(connection.Password).
-		CAFile(connection.CAFile).
-		Build()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create ovirt api client: %v", err)
-	}
-
-	return &InstanceService{Connection: con}, nil
-}
-
-func (is *InstanceService) InstanceCreate(name string, config *ovirtconfigv1.OvirtMachineProviderSpec) (instance *Instance, err error) {
-	if config == nil {
+	if providerSpec == nil {
 		return nil, fmt.Errorf("create Options need be specified to create instace")
 	}
 
-	cluster := ovirtsdk.NewClusterBuilder().Id(config.ClusterId).MustBuild()
-	template := ovirtsdk.NewTemplateBuilder().Id(config.TemplateId).MustBuild()
-	vm, err := ovirtsdk.NewVmBuilder().Name(config.Name).Cluster(cluster).Template(template).Build()
+	userDataSecret, err := kubeClient.CoreV1().
+		Secrets(machine.Namespace).
+		Get(providerSpec.UserDataSecret.Name, v1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user data secret for the machine namespace: %s", err)
+	}
+
+	ignition, ok := userDataSecret.Data["userData"]
+	if !ok {
+		return nil, fmt.Errorf("failed extracting ignition from user data secret %v", string(ignition))
+	}
+	cluster := ovirtsdk.NewClusterBuilder().Id(providerSpec.ClusterId).MustBuild()
+	template := ovirtsdk.NewTemplateBuilder().Name(providerSpec.TemplateName).MustBuild()
+	init := ovirtsdk.NewInitializationBuilder().
+		CustomScript(string(ignition)).
+		HostName(machine.Name).
+		MustBuild()
+	vm, err := ovirtsdk.NewVmBuilder().
+		Name(machine.Name).
+		Cluster(cluster).
+		Template(template).
+		Initialization(init).
+		Build()
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to construct VM struct")
 	}
 
-	klog.Infof("creating VM: %v", vm)
+	klog.Infof("creating VM: %v", vm.MustName())
 	response, err := is.Connection.SystemService().VmsService().Add().Vm(vm).Send()
 	if err != nil {
 		klog.Errorf("Failed creating VM", err)
@@ -173,8 +152,31 @@ func (is *InstanceService) InstanceCreate(name string, config *ovirtconfigv1.Ovi
 }
 
 func (is *InstanceService) InstanceDelete(id string) error {
-	klog.Infof("deleting VM with ID: %s", id)
-	_, err := is.Connection.SystemService().VmsService().VmService(id).Remove().Send()
+	klog.Infof("Deleting VM with ID: %s", id)
+	vmService := is.Connection.SystemService().VmsService().VmService(id)
+	_, err := vmService.Stop().Send()
+	if err != nil {
+		return err
+	}
+	err = util.PollImmediate(time.Second * 10, time.Minute * 5, func() (bool, error) {
+		vmResponse, err := vmService.Get().Send()
+		if err != nil {
+			return false, nil
+		}
+		vm, ok := vmResponse.Vm()
+		if !ok {
+			return false, err
+		}
+
+		return  vm.MustStatus() == ovirtsdk.VMSTATUS_DOWN, nil
+	})
+	_, err = vmService.Remove().Send()
+
+	// poll till VM doesn't exist
+	err = util.PollImmediate(time.Second * 10, time.Minute * 5, func() (bool, error) {
+		_, err := vmService.Get().Send()
+		return  err != nil, nil
+	})
 	return err
 }
 
@@ -206,8 +208,8 @@ func (is *InstanceService) GetInstanceList(opts *InstanceListOpts) ([]*Instance,
 	return instanceList, nil
 }
 
-func (is *InstanceService) GetInstance(resourceId string) (instance *Instance, err error) {
-	klog.Infof("fetching VM by ID: %s", resourceId)
+func (is *InstanceService) GetVm(resourceId string) (instance *Instance, err error) {
+	klog.Infof("Fetching VM by ID: %s", resourceId)
 	if resourceId == "" {
 		return nil, fmt.Errorf("ResourceId should be specified to  get detail.")
 	}
@@ -216,4 +218,26 @@ func (is *InstanceService) GetInstance(resourceId string) (instance *Instance, e
 		return nil, err
 	}
 	return &Instance{Vm: response.MustVm()}, nil
+}
+
+func (is *InstanceService) GetVmByName() (*Instance, error) {
+	opts := &InstanceListOpts{
+		Name: is.MachineName,
+	}
+
+	instanceList, err := is.GetInstanceList(opts)
+	if err != nil {
+		return nil, err
+	}
+	if len(instanceList) == 0 {
+		return nil, nil
+	}
+	for _, vm := range instanceList {
+		if name, ok := vm.Name(); ok {
+			if name == is.MachineName {
+				return vm, nil
+			}
+		}
+	}
+	return nil, nil
 }

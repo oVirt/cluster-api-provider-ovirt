@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis"
@@ -28,6 +29,7 @@ import (
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
 
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
+	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset"
 	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -42,14 +44,13 @@ func main() {
 	metricsAddr := flag.String("metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.Parse()
 
-	flag.Parse()
 	log := logf.Log.WithName("ovirt-controller-manager")
 	logf.SetLogger(logf.ZapLogger(false))
 	entryLog := log.WithName("entrypoint")
 
 	cfg := config.GetConfigOrDie()
 	if cfg == nil {
-		panic(fmt.Errorf("GetConfigOrDie didn't die"))
+		panic(fmt.Errorf("GetConfigOrDie didn't die and cfg is nil"))
 	}
 
 	// Setup a Manager
@@ -63,17 +64,31 @@ func main() {
 
 	mgr, err := manager.New(cfg, opts)
 	if err != nil {
-		entryLog.Error(err, "unable to set up overall controller manager")
+		entryLog.Error(err, "Unable to set up overall controller manager")
 		os.Exit(1)
 	}
 
 	if err != nil {
-		entryLog.Error(err, "unable to set up overall controller manager")
+		entryLog.Error(err, "Unable to set up overall controller manager")
 		os.Exit(1)
 	}
 
+	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		entryLog.Error(err, "Failed to create kubernetes client from configuration")
+	}
+
+	cs, err := clientset.NewForConfig(cfg)
+	if err != nil {
+		klog.Fatalf("Failed to create client from configuration: %v", err)
+	}
+
 	machineActuator, err := machine.NewActuator(ovirt.ActuatorParams{
-		Client: mgr.GetClient(),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		MachinesClient: cs.MachineV1beta1(),
+		KubeClient:     kubeClient,
+		EventRecorder:  mgr.GetEventRecorderFor("ovirtprovider"),
 	})
 	if err != nil {
 		panic(err)

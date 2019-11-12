@@ -1,17 +1,6 @@
 /*
-Copyright 2018 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
 */
 
 package machine
@@ -24,12 +13,17 @@ import (
 
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
+	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/machine/v1beta1"
 	ovirtsdk "github.com/ovirt/go-ovirt"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtclusterproviderconfig/v1alpha1"
+	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
 	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 
@@ -43,43 +37,73 @@ const (
 	RetryIntervalInstanceStatus = 10 * time.Second
 )
 
-type SshCreds struct {
-	user           string
-	privateKeyPath string
-	publicKey      string
+type OvirtActuator struct {
+	params         ovirt.ActuatorParams
+	scheme         *runtime.Scheme
+	client         client.Client
+	KubeClient     *kubernetes.Clientset
+	machinesClient v1beta1.MachineV1beta1Interface
+	EventRecorder  record.EventRecorder
 }
 
-type OvirtClient struct {
-	params ovirt.ActuatorParams
-	scheme *runtime.Scheme
-	client client.Client
-}
-
-func NewActuator(params ovirt.ActuatorParams) (*OvirtClient, error) {
-	return &OvirtClient{
-		params:           params,
-		client:           params.Client,
-		scheme:           params.Scheme,
+func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
+	return &OvirtActuator{
+		params:         params,
+		client:         params.Client,
+		machinesClient: params.MachinesClient,
+		scheme:         params.Scheme,
+		KubeClient:     params.KubeClient,
+		EventRecorder:  params.EventRecorder,
 	}, nil
 }
 
-func (ovirtClient *OvirtClient) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
-	machineService, err := clients.NewInstanceServiceFromMachine(machine)
+//getConnection returns a a client to oVirt's API endpoint
+func (actuator *OvirtActuator) getConnection(namespace, secretName string) (*ovirtsdk.Connection, error) {
+
+	creds, err := clients.GetCredentialsSecret(actuator.client, namespace, secretName)
+	if err != nil {
+		klog.Infof("failed getting creadentials for namespace %s, %s",namespace, err)
+		return nil, err
+	}
+
+	klog.Infof("creadentials %+v", creds)
+
+	connection, err := ovirtsdk.NewConnectionBuilder().
+		URL(creds.URL).
+		Username(creds.Username).
+		Password(creds.Password).
+		CAFile(creds.CAFile).Build()
+	if err != nil {
+		return nil, err
+	}
+
+	return connection, nil
+}
+
+func (actuator *OvirtActuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+	providerSpec, err := ovirtconfigv1.ProviderSpecFromRawExtension(machine.Spec.ProviderSpec.Value)
+	if err != nil {
+		return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+			"Cannot unmarshal providerSpec field: %v", err))
+	}
+
+	connection, err := actuator.getConnection(machine.Namespace, providerSpec.CredentialsSecret.Name)
+	if err != nil {
+		return fmt.Errorf("failed to create connection to oVirt API")
+	}
+	defer connection.Close()
+
+	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
 	if err != nil {
 		return err
 	}
 
-	providerSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
-	if err != nil {
-		return ovirtClient.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
-			"Cannot unmarshal providerSpec field: %v", err))
+	if verr := actuator.validateMachine(machine, providerSpec); verr != nil {
+		return actuator.handleMachineError(machine, verr)
 	}
 
-	if verr := ovirtClient.validateMachine(machine, providerSpec); verr != nil {
-		return ovirtClient.handleMachineError(machine, verr)
-	}
-
-	instance, err := ovirtClient.instanceExists(machine)
+	// creating a new instance, we don't have the vm id yet
+	instance, err := machineService.GetVmByName()
 	if err != nil {
 		return err
 	}
@@ -88,35 +112,155 @@ func (ovirtClient *OvirtClient) Create(ctx context.Context, cluster *clusterv1.C
 		return nil
 	}
 
-	instance, err = machineService.InstanceCreate(machine.Name, providerSpec)
+	instance, err = machineService.InstanceCreate(machine, providerSpec, actuator.KubeClient)
 	if err != nil {
-		return ovirtClient.handleMachineError(machine, apierrors.CreateMachine(
+		return actuator.handleMachineError(machine, apierrors.CreateMachine(
 			"error creating Ovirt instance: %v", err))
 	}
-	// TODO: wait instance ready
+
+	// Wait till ready
 	err = util.PollImmediate(RetryIntervalInstanceStatus, TimeoutInstanceCreate, func() (bool, error) {
-		instance, err := machineService.GetInstance(instance.MustId())
+		instance, err := machineService.GetVm(instance.MustId())
+		if err != nil {
+			return false, nil
+		}
+		return instance.MustStatus() == ovirtsdk.VMSTATUS_DOWN, nil
+	})
+	if err != nil {
+		return actuator.handleMachineError(machine, apierrors.CreateMachine(
+			"Error creating oVirt VM: %v", err))
+	}
+
+	vmService := machineService.Connection.SystemService().VmsService().VmService(instance.MustId())
+	_, err = vmService.Start().Send()
+	if err != nil {
+		return actuator.handleMachineError(machine, apierrors.CreateMachine(
+			"Error running oVirt VM: %v", err))
+	}
+
+	// Wait till running
+	err = util.PollImmediate(RetryIntervalInstanceStatus, TimeoutInstanceCreate, func() (bool, error) {
+		instance, err := machineService.GetVm(instance.MustId())
 		if err != nil {
 			return false, nil
 		}
 		return instance.MustStatus() == ovirtsdk.VMSTATUS_UP, nil
 	})
 	if err != nil {
-		return ovirtClient.handleMachineError(machine, apierrors.CreateMachine(
-			"error creating Ovirt instance: %v", err))
+		return actuator.handleMachineError(machine, apierrors.CreateMachine(
+			"Error running oVirt VM: %v", err))
 	}
 
-
-	return ovirtClient.updateAnnotation(machine, instance.MustId())
+	actuator.EventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Updated Machine %v", machine.Name)
+	return actuator.updateAnnotation(machine, instance)
 }
 
-func (ovirtClient *OvirtClient) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
-	machineService, err := clients.NewInstanceServiceFromMachine(machine)
+func (actuator *OvirtActuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) (bool, error) {
+	providerSpec, err := ovirtconfigv1.ProviderSpecFromRawExtension(machine.Spec.ProviderSpec.Value)
+	if err != nil {
+		return false, actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+			"Cannot unmarshal providerSpec field: %v", err))
+	}
+
+	connection, err := actuator.getConnection(machine.Namespace, providerSpec.CredentialsSecret.Name)
+	if err != nil {
+		return false, fmt.Errorf("failed to create connection to oVirt API")
+	}
+	defer connection.Close()
+
+	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
+	if err != nil {
+		return false, err
+	}
+	byName, err := machineService.GetVmByName()
+	if err != nil {
+		return false, err
+	}
+	return byName != nil, err
+}
+
+func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+	klog.Infof("About to update machine %s", machine.Name)
+	_, err := actuator.instanceStatus(machine)
 	if err != nil {
 		return err
 	}
 
-	instance, err := ovirtClient.instanceExists(machine)
+	// eager update
+	providerSpec, err := ovirtconfigv1.ProviderSpecFromRawExtension(machine.Spec.ProviderSpec.Value)
+	if err != nil {
+		return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+			"Cannot unmarshal providerSpec field: %v", err))
+	}
+
+	connection, err := actuator.getConnection(machine.Namespace, providerSpec.CredentialsSecret.Name)
+	if err != nil {
+		return fmt.Errorf("failed to create connection to oVirt API")
+	}
+	defer connection.Close()
+
+	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
+	if err != nil {
+		return err
+	}
+
+	// we might not have the vm id updated on the machine spec yet, so get by name.
+	byName, err := machineService.GetVmByName()
+	if err != nil {
+		return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+			"Cannot find a VM by name: %v", err))
+	}
+	return actuator.updateAnnotation(machine, byName)
+
+	//currentMachine := status
+	//if currentMachine == nil {
+	//	instance, err := actuator.instanceExists(machine)
+	//	if err != nil {
+	//		return err
+	//	}
+	//	if instance != nil && instance.MustStatus() == ovirtsdk.VMSTATUS_UP {
+	//		klog.Infof("Populating current state for boostrap machine %v", machine.ObjectMeta.Name)
+	//		return actuator.updateAnnotation(machine, instance)
+	//	} else {
+	//		return fmt.Errorf("Cannot retrieve current state to update machine %v", machine.ObjectMeta.Name)
+	//	}
+	//}
+	//
+	//if !actuator.requiresUpdate(currentMachine, machine) {
+	//	return nil
+	//}
+	//
+	//klog.Infof("re-creating machine %s for update.", currentMachine.ObjectMeta.Name)
+	//err = actuator.Delete(ctx, cluster, currentMachine)
+	//if err != nil {
+	//	klog.Errorf("delete machine %s for update failed: %v", currentMachine.ObjectMeta.Name, err)
+	//} else {
+	//	//TODO rgolan - wait till the machine is not retrieved and then create?
+	//	err = actuator.Create(ctx, cluster, machine)
+	//	if err != nil {
+	//		klog.Errorf("create machine %s for update failed: %v", machine.ObjectMeta.Name, err)
+	//	}
+	//}
+	//
+	//return nil
+}
+
+func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+	providerSpec, err := ovirtconfigv1.ProviderSpecFromRawExtension(machine.Spec.ProviderSpec.Value)
+	if err != nil {
+		return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+			"Cannot unmarshal providerSpec field: %v", err))
+	}
+	connection, err := actuator.getConnection(machine.Namespace, providerSpec.CredentialsSecret.Name)
+	if err != nil {
+		return err
+	}
+	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
+	if err != nil {
+		return err
+	}
+
+	instance, err := machineService.GetVmByName()
 	if err != nil {
 		return err
 	}
@@ -129,59 +273,12 @@ func (ovirtClient *OvirtClient) Delete(ctx context.Context, cluster *clusterv1.C
 	id := machine.ObjectMeta.Annotations[ovirt.OvirtIdAnnotationKey]
 	err = machineService.InstanceDelete(id)
 	if err != nil {
-		return ovirtClient.handleMachineError(machine, apierrors.DeleteMachine(
+		return actuator.handleMachineError(machine, apierrors.DeleteMachine(
 			"error deleting Ovirt instance: %v", err))
 	}
 
+	actuator.EventRecorder.Eventf(machine, corev1.EventTypeNormal, "Deleted", "Updated Machine %v", machine.Name)
 	return nil
-}
-
-func (ovirtClient *OvirtClient) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
-	klog.Infof("About to update machine %s", machine.Name)
-	status, err := ovirtClient.instanceStatus(machine)
-	if err != nil {
-		return err
-	}
-
-	currentMachine := status
-	if currentMachine == nil {
-		instance, err := ovirtClient.instanceExists(machine)
-		if err != nil {
-			return err
-		}
-		if instance != nil && instance.MustStatus() == ovirtsdk.VMSTATUS_UP {
-			klog.Infof("Populating current state for boostrap machine %v", machine.ObjectMeta.Name)
-			return ovirtClient.updateAnnotation(machine, instance.MustId())
-		} else {
-			return fmt.Errorf("Cannot retrieve current state to update machine %v", machine.ObjectMeta.Name)
-		}
-	}
-
-	if !ovirtClient.requiresUpdate(currentMachine, machine) {
-		return nil
-	}
-
-	klog.Infof("re-creating machine %s for update.", currentMachine.ObjectMeta.Name)
-	err = ovirtClient.Delete(ctx, cluster, currentMachine)
-	if err != nil {
-		klog.Errorf("delete machine %s for update failed: %v", currentMachine.ObjectMeta.Name, err)
-	} else {
-		//TODO rgolan - wait a bit between delete + create?
-		err = ovirtClient.Create(ctx, cluster, machine)
-		if err != nil {
-			klog.Errorf("create machine %s for update failed: %v", machine.ObjectMeta.Name, err)
-		}
-	}
-
-	return nil
-}
-
-func (ovirtClient *OvirtClient) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) (bool, error) {
-	instance, err := ovirtClient.instanceExists(machine)
-	if err != nil {
-		return false, err
-	}
-	return instance != nil, err
 }
 
 func getIPFromInstance(instance *clients.Instance) ([]string, error) {
@@ -218,15 +315,15 @@ func getIPFromInstance(instance *clients.Instance) ([]string, error) {
 	return addresses, nil
 }
 
-// If the OvirtClient has a client for updating Machine objects, this will set
+// If the OvirtActuator has a client for updating Machine objects, this will set
 // the appropriate reason/message on the Machine.Status. If not, such as during
 // cluster installation, it will operate as a no-op. It also returns the
 // original error for convenience, so callers can do "return handleMachineError(...)".
-func (ovirtClient *OvirtClient) handleMachineError(machine *machinev1.Machine, err *apierrors.MachineError) error {
-	if ovirtClient.client != nil {
+func (actuator *OvirtActuator) handleMachineError(machine *machinev1.Machine, err *apierrors.MachineError) error {
+	if actuator.client != nil {
 		machine.Status.ErrorReason = &err.Reason
 		machine.Status.ErrorMessage = &err.Message
-		if err := ovirtClient.client.Update(nil, machine); err != nil {
+		if err := actuator.client.Update(nil, machine); err != nil {
 			return fmt.Errorf("unable to update machine status: %v", err)
 		}
 	}
@@ -235,19 +332,49 @@ func (ovirtClient *OvirtClient) handleMachineError(machine *machinev1.Machine, e
 	return err
 }
 
-func (ovirtClient *OvirtClient) updateAnnotation(machine *machinev1.Machine, id string) error {
+func (actuator *OvirtActuator) updateAnnotation(machine *machinev1.Machine, instance *clients.Instance) error {
+	klog.Info("Updating machine status")
+	id := instance.MustId()
+	status := string(instance.MustStatus())
+	name := instance.MustName()
+	machine.Spec.ProviderID = &id
+
 	if machine.ObjectMeta.Annotations == nil {
 		machine.ObjectMeta.Annotations = make(map[string]string)
 	}
 	machine.ObjectMeta.Annotations[ovirt.OvirtIdAnnotationKey] = id
 
-	if err := ovirtClient.client.Update(nil, machine); err != nil {
+	//TODO rgolan missing addresses, we don't have qemu-qa for RHCOS yet
+	// see https://bugzilla.redhat.com/show_bug.cgi?id=1764804
+	//machine.Status.Addresses =
+	providerStatus := ovirtconfigv1.OvirtMachineProviderStatus{}
+	providerStatus.InstanceState = &status
+	providerStatus.InstanceID = &name
+
+	succeedCondition := ovirtconfigv1.OvirtMachineProviderCondition{
+		Type:    ovirtconfigv1.MachineCreated,
+		Reason:  "machineCreationSucceedReason",
+		Message: "machineCreationSucceedMessage",
+		Status:  corev1.ConditionTrue,
+	}
+	providerStatus.Conditions = append(providerStatus.Conditions, succeedCondition)
+	rawExtension, err := ovirtconfigv1.RawExtensionFromProviderStatus(&providerStatus)
+	if err != nil {
 		return err
 	}
-	return ovirtClient.updateInstanceStatus(machine)
+	machine.Status.Addresses = []corev1.NodeAddress{{Address: name, Type: corev1.NodeInternalDNS}}
+	machine.Status.ProviderStatus = rawExtension
+	time := metav1.Now()
+	machine.Status.LastUpdated = &time
+	if _, err := actuator.machinesClient.Machines("openshift-machine-api").UpdateStatus(machine); err != nil {
+		return err
+	}
+	err = actuator.updateInstanceStatus(machine)
+	actuator.EventRecorder.Eventf(machine, corev1.EventTypeNormal, "Update", "Updated Machine %v", machine.Name)
+	return err
 }
 
-func (ovirtClient *OvirtClient) requiresUpdate(a *machinev1.Machine, b *machinev1.Machine) bool {
+func (actuator *OvirtActuator) requiresUpdate(a *machinev1.Machine, b *machinev1.Machine) bool {
 	if a == nil || b == nil {
 		return true
 	}
@@ -257,37 +384,37 @@ func (ovirtClient *OvirtClient) requiresUpdate(a *machinev1.Machine, b *machinev
 		a.ObjectMeta.Name != b.ObjectMeta.Name
 }
 
-func (ovirtClient *OvirtClient) instanceExists(machine *machinev1.Machine) (instance *clients.Instance, err error) {
-	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
-	if err != nil {
-		return nil, err
-	}
-	opts := &clients.InstanceListOpts{
-		Name:   machineSpec.Name,
-	}
+//func (actuator *OvirtActuator) instanceExists(machine *machinev1.Machine) (instance *clients.Instance, err error) {
+//	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
+//	if err != nil {
+//		return nil, err
+//	}
+//	opts := &clients.InstanceListOpts{
+//		Name: machineSpec.Name,
+//	}
+//
+//	machineService, err := clients.NewInstanceServiceFromMachine(machine)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	instanceList, err := machineService.GetInstanceList(opts)
+//	if err != nil {
+//		return nil, err
+//	}
+//	if len(instanceList) == 0 {
+//		return nil, nil
+//	}
+//	for _, vm := range instanceList {
+//		if name, ok := vm.Name(); ok {
+//			if name == machine.Name {
+//				return vm, nil
+//			}
+//		}
+//	}
+//	return nil, nil
+//}
 
-	machineService, err := clients.NewInstanceServiceFromMachine(machine)
-	if err != nil {
-		return nil, err
-	}
-
-	instanceList, err := machineService.GetInstanceList(opts)
-	if err != nil {
-		return nil, err
-	}
-	if len(instanceList) == 0 {
-		return nil, nil
-	}
-	for _, vm := range instanceList {
-		if name, ok := vm.Name(); ok {
-			if name == machine.Name {
-				return vm, nil
-			}
-		}
-	}
-	return nil, nil
-}
-
-func (ovirtClient *OvirtClient) validateMachine(machine *machinev1.Machine, config *ovirtconfigv1.OvirtMachineProviderSpec) *apierrors.MachineError {
+func (actuator *OvirtActuator) validateMachine(machine *machinev1.Machine, config *ovirtconfigv1.OvirtMachineProviderSpec) *apierrors.MachineError {
 	return nil
 }

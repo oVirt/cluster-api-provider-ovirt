@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM registry.svc.ci.openshift.org/openshift/release:golang-1.12 AS builder
+FROM registry.svc.ci.openshift.org/openshift/release:golang-1.13 AS builder
 
 ARG version 
 ARG release 
@@ -26,6 +26,8 @@ LABEL   com.redhat.component="machine-api" \
 WORKDIR /go/cluster-api-provider-ovirt
 COPY . .
 
+
+RUN git --version 
 RUN make build
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal

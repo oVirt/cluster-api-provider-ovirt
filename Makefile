@@ -21,6 +21,8 @@ VERSION?=$(shell git describe --tags --always --match "v[0-9]*" | awk -F'-' '{pr
 RELEASE?=$(shell git describe --tags --always --match "v[0-9]*" | awk -F'-' '{if ($$2 != "") {print $$2 "." $$3} else {print 1}}')
 VERSION_RELEASE=$(VERSION)$(if $(RELEASE),-$(RELEASE))
 
+CLUSTER_API ?= github.com/openshift/cluster-api
+
 .PHONY: vendor
 vendor:
 	go mod tidy
@@ -33,12 +35,12 @@ $(GOBIN):
 
 work: $(GOBIN)
 
-build: export BUILDAH_LAYERS=true
+#build: export BUILDAH_LAYERS=true
 build:
 	CGO_ENABLED=0 GOOS=$(GOOS) go build \
 		-ldflags $(LDFLAGS) \
 		-o bin/manager \
-		cmd/manager/main.go
+		vendor/$(CLUSTER_API)/cmd/manager/main.go
 	CGO_ENABLED=0 GOOS=$(GOOS) go build \
 		-ldflags $(LDFLAGS) \
 		-o bin/machine-controller-manager \
@@ -114,7 +116,7 @@ generate:
 DOCKERFILE=Dockerfile
 images:
 	podman build \
-		-t $(REGISTRY)/cluster-api-provider-ovirt:$(VERSION_RELEASE) \
+		-t $(REGISTRY)/origin-ovirt-machine-controllers:$(VERSION_RELEASE) \
 		--build-arg version=$(VERSION) \
 		--build-arg release=$(RELEASE) \
 		-f $(DOCKERFILE) \

@@ -4,9 +4,9 @@ metadata:
   name: ovirt-cluster-provider-manager-role
 rules:
 - apiGroups:
-  - ovirtclusterproviderconfig.k8s.io
+  - ovirtprovider.k8s.io
   resources:
-  - ovirtclusterproviderconfigs
+  - ovirtproviders
   - ovirtmachineproviderconfigs
   verbs:
   - get
