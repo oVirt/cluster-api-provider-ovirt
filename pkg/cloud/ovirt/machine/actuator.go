@@ -66,8 +66,6 @@ func (actuator *OvirtActuator) getConnection(namespace, secretName string) (*ovi
 		return nil, err
 	}
 
-	klog.Infof("creadentials %+v", creds)
-
 	connection, err := ovirtsdk.NewConnectionBuilder().
 		URL(creds.URL).
 		Username(creds.Username).
