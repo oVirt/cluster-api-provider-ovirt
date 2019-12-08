@@ -268,8 +268,7 @@ func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cl
 		return nil
 	}
 
-	id := machine.ObjectMeta.Annotations[ovirt.OvirtIdAnnotationKey]
-	err = machineService.InstanceDelete(id)
+	err = machineService.InstanceDelete(instance.MustId())
 	if err != nil {
 		return actuator.handleMachineError(machine, apierrors.DeleteMachine(
 			"error deleting Ovirt instance: %v", err))
