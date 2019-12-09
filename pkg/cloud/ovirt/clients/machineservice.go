@@ -239,5 +239,6 @@ func (is *InstanceService) GetVmByName() (*Instance, error) {
 			}
 		}
 	}
+	// returning an nil instance if we didn't find a match
 	return nil, nil
 }

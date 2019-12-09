@@ -253,6 +253,8 @@ func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cl
 	if err != nil {
 		return err
 	}
+	defer connection.Close()
+
 	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
 	if err != nil {
 		return err
@@ -380,37 +382,6 @@ func (actuator *OvirtActuator) requiresUpdate(a *machinev1.Machine, b *machinev1
 		!reflect.DeepEqual(a.Spec.ProviderSpec, b.Spec.ProviderSpec) ||
 		a.ObjectMeta.Name != b.ObjectMeta.Name
 }
-
-//func (actuator *OvirtActuator) instanceExists(machine *machinev1.Machine) (instance *clients.Instance, err error) {
-//	machineSpec, err := ovirtconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
-//	if err != nil {
-//		return nil, err
-//	}
-//	opts := &clients.InstanceListOpts{
-//		Name: machineSpec.Name,
-//	}
-//
-//	machineService, err := clients.NewInstanceServiceFromMachine(machine)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	instanceList, err := machineService.GetInstanceList(opts)
-//	if err != nil {
-//		return nil, err
-//	}
-//	if len(instanceList) == 0 {
-//		return nil, nil
-//	}
-//	for _, vm := range instanceList {
-//		if name, ok := vm.Name(); ok {
-//			if name == machine.Name {
-//				return vm, nil
-//			}
-//		}
-//	}
-//	return nil, nil
-//}
 
 func (actuator *OvirtActuator) validateMachine(machine *machinev1.Machine, config *ovirtconfigv1.OvirtMachineProviderSpec) *apierrors.MachineError {
 	return nil
