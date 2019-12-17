@@ -8,7 +8,9 @@ package machine
 import (
 	"context"
 	"fmt"
+	"net"
 	"reflect"
+	"strings"
 	"time"
 
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
@@ -361,7 +363,26 @@ func (actuator *OvirtActuator) updateAnnotation(machine *machinev1.Machine, inst
 	if err != nil {
 		return err
 	}
-	machine.Status.Addresses = []corev1.NodeAddress{{Address: name, Type: corev1.NodeInternalDNS}}
+	addresses := []corev1.NodeAddress{{Address: name, Type: corev1.NodeInternalDNS}}
+	// RHCOS QEMU guest agent isn't available yet - https://bugzilla.redhat.com/show_bug.cgi?id=1764804
+	// Till we have one we must get the IPs from the worker by trying to resolve it by its name.
+
+	hostname := name
+	if strings.Contains(hostname, "master-") {
+		// masters have their hostname set to master-{i} but the name of the machine
+		// object is ClusterName-master-{i} - hence the striping
+		hostname = strings.SplitAfterN(hostname, "-", 3)[2]
+	}
+	klog.Infof("using hostname %s to resolve addresses", hostname)
+	ips, err := net.LookupIP(hostname)
+	if err == nil {
+		for _, ip := range ips {
+			if ip.To4() != nil {
+				addresses = append(addresses, corev1.NodeAddress{Type: corev1.NodeInternalIP, Address: ip.String()})
+			}
+		}
+	}
+	machine.Status.Addresses = addresses
 	machine.Status.ProviderStatus = rawExtension
 	time := metav1.Now()
 	machine.Status.LastUpdated = &time
