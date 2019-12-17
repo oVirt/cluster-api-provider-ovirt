@@ -193,13 +193,13 @@ func (is *InstanceService) GetInstanceList(opts *InstanceListOpts) ([]*Instance,
 		// TODO (rgolan) very inefficient get all query.
 		//  Need to fetch all by cluster id and by Tag
 		// which is set the to openshift cluster Id
-		klog.Infof("Search return %s vms", len(vms.Slice()))
+		klog.Infof("Search return %d vms", len(vms.Slice()))
 		for _, vm := range vms.Slice() {
 			if cluster, ok := vm.Cluster(); ok {
 				id, _ := cluster.Id()
 				if id == is.ClusterId {
 					name, _ := vm.Name()
-					klog.Infof("Found VM: %v", name)
+					klog.V(5).Infof("Found VM: %v", name)
 					instanceList = append(instanceList, &Instance{Vm: vm})
 				}
 			}
