@@ -16,7 +16,6 @@ import (
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/machine/v1beta1"
 	ovirtsdk "github.com/ovirt/go-ovirt"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -210,38 +209,6 @@ func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cl
 			"Cannot find a VM by name: %v", err))
 	}
 	return actuator.updateAnnotation(machine, byName)
-
-	//currentMachine := status
-	//if currentMachine == nil {
-	//	instance, err := actuator.instanceExists(machine)
-	//	if err != nil {
-	//		return err
-	//	}
-	//	if instance != nil && instance.MustStatus() == ovirtsdk.VMSTATUS_UP {
-	//		klog.Infof("Populating current state for boostrap machine %v", machine.ObjectMeta.Name)
-	//		return actuator.updateAnnotation(machine, instance)
-	//	} else {
-	//		return fmt.Errorf("Cannot retrieve current state to update machine %v", machine.ObjectMeta.Name)
-	//	}
-	//}
-	//
-	//if !actuator.requiresUpdate(currentMachine, machine) {
-	//	return nil
-	//}
-	//
-	//klog.Infof("re-creating machine %s for update.", currentMachine.ObjectMeta.Name)
-	//err = actuator.Delete(ctx, cluster, currentMachine)
-	//if err != nil {
-	//	klog.Errorf("delete machine %s for update failed: %v", currentMachine.ObjectMeta.Name, err)
-	//} else {
-	//	//TODO rgolan - wait till the machine is not retrieved and then create?
-	//	err = actuator.Create(ctx, cluster, machine)
-	//	if err != nil {
-	//		klog.Errorf("create machine %s for update failed: %v", machine.ObjectMeta.Name, err)
-	//	}
-	//}
-	//
-	//return nil
 }
 
 func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
@@ -279,40 +246,6 @@ func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cl
 
 	actuator.EventRecorder.Eventf(machine, corev1.EventTypeNormal, "Deleted", "Updated Machine %v", machine.Name)
 	return nil
-}
-
-func getIPFromInstance(instance *clients.Instance) ([]string, error) {
-	type networkInterface struct {
-		Address string  `json:"addr"`
-		Version float64 `json:"version"`
-		Type    string  `json:"OS-EXT-IPS:type"`
-	}
-
-	nics, ok := instance.Nics()
-	if !ok {
-		return nil, errors.New("There are no reported nics")
-	}
-
-	var addresses []string
-	// The ovirt-guest agent reports all ips. It is possible to blacklist
-	// some devices from the report. Specifically to get the public ip address
-	// we don't have a reliable way other than heuristics to get an accessible public ip
-	// possibly match it against the current network
-	for _, nic := range nics.Slice() {
-		if devices, ok := nic.ReportedDevices(); ok {
-			for _, device := range devices.Slice() {
-				if ips, ok := device.Ips(); ok {
-					for _, ip := range ips.Slice() {
-						if address, ok := ip.Address(); ok {
-							addresses = append(addresses, address)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return addresses, nil
 }
 
 // If the OvirtActuator has a client for updating Machine objects, this will set
