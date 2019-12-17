@@ -22,5 +22,5 @@ $ export KUBECONFIG=path/to/kubecofig
 
 $  bin/manager &
 
-$  bin/machine-controller-manager --namespace openshit-machine-api --metrics-addr=:8888 &
+$  bin/machine-controller-manager --namespace openshift-machine-api --metrics-addr=:8888 &
 ``` 
