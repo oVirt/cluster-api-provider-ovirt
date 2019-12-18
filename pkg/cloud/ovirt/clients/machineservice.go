@@ -208,34 +208,44 @@ func (is *InstanceService) GetInstanceList(opts *InstanceListOpts) ([]*Instance,
 	return instanceList, nil
 }
 
-func (is *InstanceService) GetVm(resourceId string) (instance *Instance, err error) {
+// Get VM by ID or Name
+func (is *InstanceService) GetVm(machine machinev1.Machine) (instance *Instance, err error) {
+	if machine.Spec.ProviderID != nil && *machine.Spec.ProviderID != "" {
+		klog.Infof("Fetching VM by ID: %s", machine.Spec.ProviderID)
+		instance, err = is.GetVmByID(*machine.Spec.ProviderID)
+		if err == nil {
+			return instance, err
+		}
+	}
+	instance, err = is.GetVmByName()
+	return instance, err
+
+}
+
+func (is *InstanceService) GetVmByID(resourceId string) (instance *Instance, err error) {
 	klog.Infof("Fetching VM by ID: %s", resourceId)
 	if resourceId == "" {
-		return nil, fmt.Errorf("ResourceId should be specified to  get detail.")
+		return nil, fmt.Errorf("ResourceId should be specified to get detail")
 	}
 	response, err := is.Connection.SystemService().VmsService().VmService(resourceId).Get().Send()
 	if err != nil {
 		return nil, err
 	}
+	klog.Infof("Got VM by ID: %s", response.MustVm().MustName())
 	return &Instance{Vm: response.MustVm()}, nil
 }
 
 func (is *InstanceService) GetVmByName() (*Instance, error) {
-	opts := &InstanceListOpts{
-		Name: is.MachineName,
-	}
-
-	instanceList, err := is.GetInstanceList(opts)
+	response, err := is.Connection.SystemService().VmsService().
+		List().Search("name=" + is.MachineName).Send()
 	if err != nil {
+		klog.Errorf("Failed to fetch VM by name")
 		return nil, err
 	}
-	if len(instanceList) == 0 {
-		return nil, nil
-	}
-	for _, vm := range instanceList {
+	for _, vm := range response.MustVms().Slice() {
 		if name, ok := vm.Name(); ok {
 			if name == is.MachineName {
-				return vm, nil
+				return &Instance{Vm: vm}, nil
 			}
 		}
 	}

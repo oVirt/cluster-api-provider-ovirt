@@ -118,7 +118,7 @@ func (actuator *OvirtActuator) Create(ctx context.Context, cluster *clusterv1.Cl
 
 	// Wait till ready
 	err = util.PollImmediate(RetryIntervalInstanceStatus, TimeoutInstanceCreate, func() (bool, error) {
-		instance, err := machineService.GetVm(instance.MustId())
+		instance, err := machineService.GetVm(*machine)
 		if err != nil {
 			return false, nil
 		}
@@ -138,7 +138,7 @@ func (actuator *OvirtActuator) Create(ctx context.Context, cluster *clusterv1.Cl
 
 	// Wait till running
 	err = util.PollImmediate(RetryIntervalInstanceStatus, TimeoutInstanceCreate, func() (bool, error) {
-		instance, err := machineService.GetVm(instance.MustId())
+		instance, err := machineService.GetVm(*machine)
 		if err != nil {
 			return false, nil
 		}
@@ -170,19 +170,19 @@ func (actuator *OvirtActuator) Exists(ctx context.Context, cluster *clusterv1.Cl
 	if err != nil {
 		return false, err
 	}
-	byName, err := machineService.GetVmByName()
+	vm, err := machineService.GetVm(*machine)
 	if err != nil {
 		return false, err
 	}
-	return byName != nil, err
+	return vm != nil, err
 }
 
 func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	klog.Infof("About to update machine %s", machine.Name)
-	_, err := actuator.instanceStatus(machine)
-	if err != nil {
-		return err
-	}
+	//_, err := actuator.instanceStatus(machine)
+	//if err != nil {
+	//	return err
+	//}
 
 	// eager update
 	providerSpec, err := ovirtconfigv1.ProviderSpecFromRawExtension(machine.Spec.ProviderSpec.Value)
@@ -202,13 +202,23 @@ func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cl
 		return err
 	}
 
-	// we might not have the vm id updated on the machine spec yet, so get by name.
-	byName, err := machineService.GetVmByName()
-	if err != nil {
-		return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
-			"Cannot find a VM by name: %v", err))
+	var instance *clients.Instance
+	if machine.Spec.ProviderID == nil || *machine.Spec.ProviderID == "" {
+		instance, err = machineService.GetVmByName()
+		if err != nil {
+			return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+				"Cannot find a VM by name: %v", err))
+		}
+	} else {
+		instance, err = machineService.GetVm(*machine)
+		if err != nil {
+			return actuator.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+				"Cannot find a VM by id: %v", err))
+		}
 	}
-	return actuator.updateAnnotation(machine, byName)
+	// we might not have the vm id updated on the machine spec yet, so get by name.
+
+	return actuator.updateAnnotation(machine, instance)
 }
 
 func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
@@ -228,7 +238,7 @@ func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cl
 		return err
 	}
 
-	instance, err := machineService.GetVmByName()
+	instance, err := machineService.GetVm(*machine)
 	if err != nil {
 		return err
 	}
@@ -277,18 +287,17 @@ func (actuator *OvirtActuator) updateAnnotation(machine *machinev1.Machine, inst
 	}
 	machine.ObjectMeta.Annotations[ovirt.OvirtIdAnnotationKey] = id
 
-	//TODO rgolan missing addresses, we don't have qemu-qa for RHCOS yet
-	// see https://bugzilla.redhat.com/show_bug.cgi?id=1764804
-	//machine.Status.Addresses =
 	providerStatus := ovirtconfigv1.OvirtMachineProviderStatus{}
 	providerStatus.InstanceState = &status
 	providerStatus.InstanceID = &name
 
 	succeedCondition := ovirtconfigv1.OvirtMachineProviderCondition{
-		Type:    ovirtconfigv1.MachineCreated,
-		Reason:  "machineCreationSucceedReason",
-		Message: "machineCreationSucceedMessage",
-		Status:  corev1.ConditionTrue,
+		Type:               ovirtconfigv1.MachineCreated,
+		Status:             corev1.ConditionTrue,
+		LastProbeTime:      metav1.Now(),
+		LastTransitionTime: metav1.Now(),
+		Reason:             "machineCreationSucceedReason",
+		Message:            "machineCreationSucceedMessage",
 	}
 	providerStatus.Conditions = append(providerStatus.Conditions, succeedCondition)
 	rawExtension, err := ovirtconfigv1.RawExtensionFromProviderStatus(&providerStatus)
@@ -296,7 +305,7 @@ func (actuator *OvirtActuator) updateAnnotation(machine *machinev1.Machine, inst
 		return err
 	}
 	addresses := []corev1.NodeAddress{{Address: name, Type: corev1.NodeInternalDNS}}
-	// RHCOS QEMU guest agent isn't available yet - https://bugzilla.redhat.com/show_bug.cgi?id=1764804
+	// TODO rgolan - RHCOS QEMU guest agent isn't available yet - https://bugzilla.redhat.com/show_bug.cgi?id=1764804
 	// Till we have one we must get the IPs from the worker by trying to resolve it by its name.
 	klog.V(5).Infof("using hostname %s to resolve addresses", name)
 	ips, err := net.LookupIP(name)
