@@ -35,6 +35,7 @@ import (
 const (
 	TimeoutInstanceCreate       = 5 * time.Minute
 	RetryIntervalInstanceStatus = 10 * time.Second
+	credentialsNameSpace        = "ovirt-credentials"
 )
 
 type OvirtActuator struct {
@@ -44,9 +45,14 @@ type OvirtActuator struct {
 	KubeClient     *kubernetes.Clientset
 	machinesClient v1beta1.MachineV1beta1Interface
 	EventRecorder  record.EventRecorder
+	ovirtApi       *ovirtsdk.Connection
 }
 
 func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
+	ovirtApi, err := createApiConnection(params.Client, params.Namespace, credentialsNameSpace)
+	if err != nil {
+		return nil, err
+	}
 	return &OvirtActuator{
 		params:         params,
 		client:         params.Client,
@@ -54,28 +60,19 @@ func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
 		scheme:         params.Scheme,
 		KubeClient:     params.KubeClient,
 		EventRecorder:  params.EventRecorder,
+		ovirtApi:       ovirtApi,
 	}, nil
 }
 
 //getConnection returns a a client to oVirt's API endpoint
 func (actuator *OvirtActuator) getConnection(namespace, secretName string) (*ovirtsdk.Connection, error) {
-
-	creds, err := clients.GetCredentialsSecret(actuator.client, namespace, secretName)
+	err := actuator.ovirtApi.Test()
 	if err != nil {
-		klog.Infof("failed getting creadentials for namespace %s, %s", namespace, err)
-		return nil, err
+		// session expired or some other error, re-login.
+		actuator.ovirtApi, err = createApiConnection(actuator.client, namespace, secretName)
 	}
 
-	connection, err := ovirtsdk.NewConnectionBuilder().
-		URL(creds.URL).
-		Username(creds.Username).
-		Password(creds.Password).
-		CAFile(creds.CAFile).Build()
-	if err != nil {
-		return nil, err
-	}
-
-	return connection, nil
+	return actuator.ovirtApi, err
 }
 
 func (actuator *OvirtActuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
@@ -89,7 +86,6 @@ func (actuator *OvirtActuator) Create(ctx context.Context, cluster *clusterv1.Cl
 	if err != nil {
 		return fmt.Errorf("failed to create connection to oVirt API")
 	}
-	defer connection.Close()
 
 	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
 	if err != nil {
@@ -164,7 +160,6 @@ func (actuator *OvirtActuator) Exists(ctx context.Context, cluster *clusterv1.Cl
 	if err != nil {
 		return false, fmt.Errorf("failed to create connection to oVirt API")
 	}
-	defer connection.Close()
 
 	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
 	if err != nil {
@@ -195,7 +190,6 @@ func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cl
 	if err != nil {
 		return fmt.Errorf("failed to create connection to oVirt API")
 	}
-	defer connection.Close()
 
 	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
 	if err != nil {
@@ -231,7 +225,6 @@ func (actuator *OvirtActuator) Delete(ctx context.Context, cluster *clusterv1.Cl
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
 
 	machineService, err := clients.NewInstanceServiceFromMachine(machine, connection)
 	if err != nil {
@@ -340,4 +333,24 @@ func (actuator *OvirtActuator) requiresUpdate(a *machinev1.Machine, b *machinev1
 
 func (actuator *OvirtActuator) validateMachine(machine *machinev1.Machine, config *ovirtconfigv1.OvirtMachineProviderSpec) *apierrors.MachineError {
 	return nil
+}
+
+//createApiConnection returns a a client to oVirt's API endpoint
+func createApiConnection(client client.Client, namespace string, secretName string) (*ovirtsdk.Connection, error) {
+	creds, err := clients.GetCredentialsSecret(client, namespace, secretName)
+	if err != nil {
+		klog.Infof("failed getting creadentials for namespace %s, %s", namespace, err)
+		return nil, err
+	}
+
+	connection, err := ovirtsdk.NewConnectionBuilder().
+		URL(creds.URL).
+		Username(creds.Username).
+		Password(creds.Password).
+		CAFile(creds.CAFile).Build()
+	if err != nil {
+		return nil, err
+	}
+
+	return connection, nil
 }

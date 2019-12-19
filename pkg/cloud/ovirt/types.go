@@ -29,6 +29,7 @@ const (
 )
 // ActuatorParams holds parameter information for Actuator
 type ActuatorParams struct {
+	Namespace      string
 	Client         client.Client
 	KubeClient     *kubernetes.Clientset
 	Scheme         *runtime.Scheme

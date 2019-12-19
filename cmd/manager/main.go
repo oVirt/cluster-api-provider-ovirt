@@ -84,6 +84,7 @@ func main() {
 	}
 
 	machineActuator, err := machine.NewActuator(ovirt.ActuatorParams{
+		Namespace:      *watchNamespace,
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		MachinesClient: cs.MachineV1beta1(),
