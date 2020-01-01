@@ -135,6 +135,7 @@ func (is *InstanceService) InstanceCreate(
 		Name(machine.Name).
 		Cluster(cluster).
 		Template(template).
+		TagsOfAny(ovirtsdk.NewTagBuilder().Name(machine.Labels["machine.openshift.io/cluster-api-cluster"]).MustBuild()).
 		Initialization(init).
 		Build()
 	if err != nil {
