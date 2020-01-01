@@ -35,7 +35,7 @@ import (
 const (
 	TimeoutInstanceCreate       = 5 * time.Minute
 	RetryIntervalInstanceStatus = 10 * time.Second
-	credentialsNameSpace        = "ovirt-credentials"
+	credentialsSecretName       = "ovirt-credentials"
 )
 
 type OvirtActuator struct {
@@ -49,7 +49,7 @@ type OvirtActuator struct {
 }
 
 func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
-	ovirtApi, err := createApiConnection(params.Client, params.Namespace, credentialsNameSpace)
+	ovirtApi, err := createApiConnection(params.Client, params.Namespace, credentialsSecretName)
 	if err != nil {
 		return nil, err
 	}
@@ -338,8 +338,9 @@ func (actuator *OvirtActuator) validateMachine(machine *machinev1.Machine, confi
 //createApiConnection returns a a client to oVirt's API endpoint
 func createApiConnection(client client.Client, namespace string, secretName string) (*ovirtsdk.Connection, error) {
 	creds, err := clients.GetCredentialsSecret(client, namespace, secretName)
+
 	if err != nil {
-		klog.Infof("failed getting creadentials for namespace %s, %s", namespace, err)
+		klog.Infof("failed getting credentials for namespace %s, %s", namespace, err)
 		return nil, err
 	}
 
@@ -347,7 +348,9 @@ func createApiConnection(client client.Client, namespace string, secretName stri
 		URL(creds.URL).
 		Username(creds.Username).
 		Password(creds.Password).
-		CAFile(creds.CAFile).Build()
+		CAFile(creds.CAFile).
+		Insecure(creds.Insecure).
+		Build()
 	if err != nil {
 		return nil, err
 	}
