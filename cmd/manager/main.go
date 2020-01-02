@@ -83,6 +83,14 @@ func main() {
 		klog.Fatalf("Failed to create client from configuration: %v", err)
 	}
 
+	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+		panic(err)
+	}
+
+	if err := clusterapis.AddToScheme(mgr.GetScheme()); err != nil {
+		panic(err)
+	}
+
 	machineActuator, err := machine.NewActuator(ovirt.ActuatorParams{
 		Namespace:      *watchNamespace,
 		Client:         mgr.GetClient(),
@@ -92,14 +100,6 @@ func main() {
 		EventRecorder:  mgr.GetEventRecorderFor("ovirtprovider"),
 	})
 	if err != nil {
-		panic(err)
-	}
-
-	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		panic(err)
-	}
-
-	if err := clusterapis.AddToScheme(mgr.GetScheme()); err != nil {
 		panic(err)
 	}
 

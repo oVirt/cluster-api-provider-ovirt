@@ -49,10 +49,6 @@ type OvirtActuator struct {
 }
 
 func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
-	ovirtApi, err := createApiConnection(params.Client, params.Namespace, credentialsSecretName)
-	if err != nil {
-		return nil, err
-	}
 	return &OvirtActuator{
 		params:         params,
 		client:         params.Client,
@@ -60,14 +56,14 @@ func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
 		scheme:         params.Scheme,
 		KubeClient:     params.KubeClient,
 		EventRecorder:  params.EventRecorder,
-		ovirtApi:       ovirtApi,
+		ovirtApi:       nil,
 	}, nil
 }
 
 //getConnection returns a a client to oVirt's API endpoint
 func (actuator *OvirtActuator) getConnection(namespace, secretName string) (*ovirtsdk.Connection, error) {
-	err := actuator.ovirtApi.Test()
-	if err != nil {
+	var err error
+	if actuator.ovirtApi == nil || actuator.ovirtApi.Test() != nil {
 		// session expired or some other error, re-login.
 		actuator.ovirtApi, err = createApiConnection(actuator.client, namespace, secretName)
 	}
