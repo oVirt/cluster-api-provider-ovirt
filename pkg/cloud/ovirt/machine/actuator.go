@@ -170,10 +170,6 @@ func (actuator *OvirtActuator) Exists(ctx context.Context, cluster *clusterv1.Cl
 
 func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	klog.Infof("About to update machine %s", machine.Name)
-	//_, err := actuator.instanceStatus(machine)
-	//if err != nil {
-	//	return err
-	//}
 
 	// eager update
 	providerSpec, err := ovirtconfigv1.ProviderSpecFromRawExtension(machine.Spec.ProviderSpec.Value)
