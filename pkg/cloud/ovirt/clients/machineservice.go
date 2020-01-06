@@ -135,7 +135,6 @@ func (is *InstanceService) InstanceCreate(
 		Name(machine.Name).
 		Cluster(cluster).
 		Template(template).
-		TagsOfAny(ovirtsdk.NewTagBuilder().Name(machine.Labels["machine.openshift.io/cluster-api-cluster"]).MustBuild()).
 		Initialization(init).
 		Build()
 	if err != nil {
@@ -147,6 +146,15 @@ func (is *InstanceService) InstanceCreate(
 	if err != nil {
 		klog.Errorf("Failed creating VM", err)
 		return nil, err
+	}
+
+	_, err = is.Connection.SystemService().VmsService().
+		VmService(response.MustVm().MustId()).
+		TagsService().Add().
+		Tag(ovirtsdk.NewTagBuilder().Name(machine.Labels["machine.openshift.io/cluster-api-cluster"]).MustBuild()).
+		Send()
+	if err != nil {
+		klog.Errorf("Failed to add tag to  VM, skipping", err)
 	}
 
 	return &Instance{response.MustVm()}, nil
