@@ -1,4 +1,4 @@
-module github.com/ovirt/cluster-api-provider-ovirt
+module github.com/openshift/cluster-api-provider-ovirt
 
 go 1.12
 
