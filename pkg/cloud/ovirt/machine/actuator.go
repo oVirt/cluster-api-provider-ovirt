@@ -23,9 +23,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
+	ovirtconfigv1 "github.com/openshift/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 
 	apierrors "github.com/openshift/cluster-api/pkg/errors"
 	"github.com/openshift/cluster-api/pkg/util"

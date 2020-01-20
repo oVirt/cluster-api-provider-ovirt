@@ -24,7 +24,7 @@ import (
 
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
+	ovirtconfigv1 "github.com/openshift/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
 )
 
 type InstanceService struct {
