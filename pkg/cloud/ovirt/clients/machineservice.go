@@ -6,12 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package clients
 
 import (
-	"crypto/tls"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
 	"time"
 
 	"github.com/openshift/cluster-api/pkg/util"
