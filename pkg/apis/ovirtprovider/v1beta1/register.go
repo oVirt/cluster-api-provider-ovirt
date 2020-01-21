@@ -59,23 +59,6 @@ func MachineSpecFromProviderSpec(providerSpec machinev1.ProviderSpec) (*OvirtMac
 	return &config, nil
 }
 
-// RawExtensionFromProviderSpec marshals the machine provider spec.
-func RawExtensionFromProviderSpec(spec *OvirtMachineProviderSpec) (*runtime.RawExtension, error) {
-	if spec == nil {
-		return &runtime.RawExtension{}, nil
-	}
-
-	var rawBytes []byte
-	var err error
-	if rawBytes, err = json.Marshal(spec); err != nil {
-		return nil, fmt.Errorf("error marshalling providerSpec: %v", err)
-	}
-
-	return &runtime.RawExtension{
-		Raw: rawBytes,
-	}, nil
-}
-
 // RawExtensionFromProviderStatus marshals the provider status
 func RawExtensionFromProviderStatus(status *OvirtMachineProviderStatus) (*runtime.RawExtension, error) {
 	if status == nil {
@@ -107,19 +90,3 @@ func ProviderSpecFromRawExtension(rawExtension *runtime.RawExtension) (*OvirtMac
 	klog.V(5).Infof("Got provider spec from raw extension: %+v", spec)
 	return spec, nil
 }
-
-// ProviderStatusFromRawExtension unmarshals a raw extension into a OvirtMachineProviderStatus type
-func ProviderStatusFromRawExtension(rawExtension *runtime.RawExtension) (*OvirtMachineProviderStatus, error) {
-	if rawExtension == nil {
-		return &OvirtMachineProviderStatus{}, nil
-	}
-
-	providerStatus := new(OvirtMachineProviderStatus)
-	if err := yaml.Unmarshal(rawExtension.Raw, providerStatus); err != nil {
-		return nil, fmt.Errorf("error unmarshalling providerStatus: %v", err)
-	}
-
-	klog.V(5).Infof("Got provider Status from raw extension: %+v", providerStatus)
-	return providerStatus, nil
-}
-
