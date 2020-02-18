@@ -80,7 +80,7 @@ github.com/openshift/cluster-api/pkg/controller/noderefutil
 github.com/openshift/cluster-api/pkg/drain
 github.com/openshift/cluster-api/pkg/errors
 github.com/openshift/cluster-api/pkg/util
-# github.com/ovirt/go-ovirt v4.3.4+incompatible
+# github.com/ovirt/go-ovirt v0.0.0-20200214015642-90013aa942c3
 github.com/ovirt/go-ovirt
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
