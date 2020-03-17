@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -127,6 +128,13 @@ func (is *InstanceService) InstanceCreate(
 	}
 	cluster := ovirtsdk.NewClusterBuilder().Id(providerSpec.ClusterId).MustBuild()
 	template := ovirtsdk.NewTemplateBuilder().Name(providerSpec.TemplateName).MustBuild()
+	cpu := ovirtsdk.NewCpuBuilder().
+		TopologyBuilder(
+			ovirtsdk.NewCpuTopologyBuilder().
+			Cores(int64(providerSpec.Cores)).
+			Sockets(int64(providerSpec.Sockets)).
+			Threads(int64(providerSpec.Threads))).
+		MustBuild()
 	init := ovirtsdk.NewInitializationBuilder().
 		CustomScript(string(ignition)).
 		HostName(machine.Name).
@@ -135,6 +143,9 @@ func (is *InstanceService) InstanceCreate(
 		Name(machine.Name).
 		Cluster(cluster).
 		Template(template).
+		Cpu(cpu).
+		Memory(int64(providerSpec.MemoryInMB * int32(math.Pow(2, 20)))).
+		Type(providerSpec.InstanceType).
 		Initialization(init).
 		Build()
 	if err != nil {
