@@ -128,26 +128,39 @@ func (is *InstanceService) InstanceCreate(
 	}
 	cluster := ovirtsdk.NewClusterBuilder().Id(providerSpec.ClusterId).MustBuild()
 	template := ovirtsdk.NewTemplateBuilder().Name(providerSpec.TemplateName).MustBuild()
-	cpu := ovirtsdk.NewCpuBuilder().
-		TopologyBuilder(
-			ovirtsdk.NewCpuTopologyBuilder().
-			Cores(int64(providerSpec.Cores)).
-			Sockets(int64(providerSpec.Sockets)).
-			Threads(int64(providerSpec.Threads))).
-		MustBuild()
 	init := ovirtsdk.NewInitializationBuilder().
 		CustomScript(string(ignition)).
 		HostName(machine.Name).
 		MustBuild()
-	vm, err := ovirtsdk.NewVmBuilder().
+
+	vmBuilder := ovirtsdk.NewVmBuilder().
 		Name(machine.Name).
 		Cluster(cluster).
 		Template(template).
-		Cpu(cpu).
-		Memory(int64(providerSpec.MemoryInMB * int32(math.Pow(2, 20)))).
-		Type(providerSpec.InstanceType).
-		Initialization(init).
-		Build()
+		Initialization(init)
+
+	if providerSpec.VMType != "" {
+		vmBuilder.Type(ovirtsdk.VmType(providerSpec.VMType))
+	}
+	if providerSpec.InstanceTypeId != "" {
+		vmBuilder.InstanceTypeBuilder(
+			ovirtsdk.NewInstanceTypeBuilder().
+				Id(providerSpec.InstanceTypeId))
+	} else {
+		if providerSpec.CPU != nil {
+			vmBuilder.CpuBuilder(
+				ovirtsdk.NewCpuBuilder().
+					TopologyBuilder(ovirtsdk.NewCpuTopologyBuilder().
+						Cores(int64(providerSpec.CPU.Cores)).
+						Sockets(int64(providerSpec.CPU.Sockets)).
+						Threads(int64(providerSpec.CPU.Threads))))
+		}
+		if providerSpec.MemoryMB > 0 {
+			vmBuilder.Memory(int64(math.Pow(2, 20)) * int64(providerSpec.MemoryMB))
+		}
+	}
+
+	vm, err := vmBuilder.Build()
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to construct VM struct")
 	}
@@ -157,6 +170,20 @@ func (is *InstanceService) InstanceCreate(
 	if err != nil {
 		klog.Errorf("Failed creating VM", err)
 		return nil, err
+	}
+
+	err = is.Connection.WaitForVM(response.MustVm().MustId(), ovirtsdk.VMSTATUS_DOWN, time.Minute)
+	if err != nil {
+		return nil, errors.Wrap(err, "Timed out waiting for the VM creation to finish")
+	}
+
+	vmService := is.Connection.SystemService().VmsService().VmService(response.MustVm().MustId())
+
+	if providerSpec.OSDisk != nil {
+		err = is.handleDiskExtension(vmService, response, providerSpec)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	_, err = is.Connection.SystemService().VmsService().
@@ -169,6 +196,50 @@ func (is *InstanceService) InstanceCreate(
 	}
 
 	return &Instance{response.MustVm()}, nil
+}
+
+func (is *InstanceService) handleDiskExtension(vmService *ovirtsdk.VmService, createdVM *ovirtsdk.VmsServiceAddResponse, providerSpec *ovirtconfigv1.OvirtMachineProviderSpec) error {
+	attachmentsResponse, err := vmService.DiskAttachmentsService().List().Send()
+	if err != nil {
+		return err
+	}
+
+	var bootableDiskAttachment *ovirtsdk.DiskAttachment
+	for _, disk := range attachmentsResponse.MustAttachments().Slice() {
+		if disk.MustBootable() {
+			// found the os disk
+			bootableDiskAttachment = disk
+		}
+	}
+	if bootableDiskAttachment == nil {
+		return fmt.Errorf("the VM %s(%s) doesn't have a bootable disk - was Blank template used by mistake?",
+			createdVM.MustVm().MustName(), createdVM.MustVm().MustId())
+	}
+	// extend the disk if requested size is bigger than template. We won't support shrinking it.
+	newDiskSize := providerSpec.OSDisk.SizeGB * int64(math.Pow(2, 30))
+	if newDiskSize > bootableDiskAttachment.MustDisk().MustProvisionedSize() {
+		klog.Infof("Extending the OS disk from %d to %d",
+			bootableDiskAttachment.MustDisk().MustProvisionedSize(),
+			newDiskSize)
+
+		bootableDiskAttachment.
+			MustDisk().
+			SetProvisionedSize(newDiskSize)
+		_, err := vmService.DiskAttachmentsService().
+			AttachmentService(bootableDiskAttachment.MustDisk().MustId()).
+			Update().
+			Send()
+		if err != nil {
+			return err
+		}
+		klog.Infof("Waiting while extending the OS disk")
+		// wait for the disk extension to be over
+		err = is.Connection.WaitForDisk(bootableDiskAttachment.MustId(), ovirtsdk.DISKSTATUS_OK, 20*time.Minute)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (is *InstanceService) InstanceDelete(id string) error {
