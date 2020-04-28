@@ -144,6 +144,11 @@ func (is *InstanceService) InstanceCreate(
 		}
 	}
 
+	err = is.handleNics(vmService, providerSpec)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed handling nics creation for VM %s", vm.MustName())
+	}
+
 	_, err = is.Connection.SystemService().VmsService().
 		VmService(response.MustVm().MustId()).
 		TagsService().Add().
@@ -300,4 +305,36 @@ func (is *InstanceService) GetVmByName() (*Instance, error) {
 	}
 	// returning an nil instance if we didn't find a match
 	return nil, nil
+}
+
+func (is *InstanceService) handleNics(vmService *ovirtsdk.VmService, spec *ovirtconfigv1.OvirtMachineProviderSpec) error {
+	if spec.NetworkInterfaces == nil || len(spec.NetworkInterfaces) == 0 {
+		return nil
+	}
+	nicList, err := vmService.NicsService().List().Send()
+	if err != nil {
+		return errors.Wrap(err, "failed fetching VM network interfaces")
+	}
+
+	// remove all existing nics
+	for _, n := range nicList.MustNics().Slice() {
+		_, err := vmService.NicsService().NicService(n.MustId()).Remove().Send()
+		if err != nil {
+			return errors.Wrap(err, "failed clearing all interfaces before populating new ones")
+		}
+	}
+
+	// re-add nics
+	for i, nic := range spec.NetworkInterfaces {
+		_, err := vmService.NicsService().Add().Nic(
+			ovirtsdk.NewNicBuilder().
+				Name(fmt.Sprintf("nic%d", i+1)).
+				VnicProfileBuilder(ovirtsdk.NewVnicProfileBuilder().Id(nic.VNICProfileID)).
+				MustBuild()).
+			Send()
+		if err != nil {
+			return errors.Wrap(err, "failed to create network interface")
+		}
+	}
+	return nil
 }
