@@ -6,13 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package clients
 
 import (
-	"crypto/tls"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
-	"net/url"
-	"os"
 	"time"
 
 	"github.com/openshift/cluster-api/pkg/util"
@@ -54,43 +49,6 @@ type SshKeyPair struct {
 
 type InstanceListOpts struct {
 	Name string `json:"name"`
-}
-
-func GetOvirtConnectionConf() (*ovirtsdk.ConnectionBuilder, error) {
-
-	//// expecting ovirt-config.yaml at ~/.ovirt/ovirt-config.yaml or at env VAR OVIRT_CONFIG
-	//file, err := os.Open("~/.ovirt/ovirt-config.yaml")
-
-	//getCredentialsSecret()
-	connectionBuilder := ovirtsdk.NewConnectionBuilder()
-
-	// just for debug
-	//klog.Infof("the ovirt config loaded is: %v", out)
-	engineUrl := "https://rgolan.usersys.redhat.com:8443/ovirt-engine/api"
-	connectionBuilder.
-		URL(engineUrl).
-		Username("admin@internal").
-		Password("123").
-		CAFile("")
-
-	client := http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	certURL, _ := url.Parse(engineUrl)
-	certURL.Path = "ovirt-engine/services/pki-resource"
-	certURL.RawQuery = url.PathEscape("resource=ca-certificate&format=X509-PEM-CA")
-
-	resp, err := client.Get(certURL.String())
-	if err != nil || resp.StatusCode != http.StatusOK {
-		return connectionBuilder, fmt.Errorf("error downloading ovirt-engine certificate %s with status %v", err, resp)
-	}
-	defer resp.Body.Close()
-
-	file, err := os.Create("/tmp/ovirt-engine.ca")
-	if err != nil {
-		return connectionBuilder, fmt.Errorf("failed writing ovirt-engine certificate %s", err)
-	}
-	io.Copy(file, resp.Body)
-	connectionBuilder.CAFile(file.Name())
-	return connectionBuilder, nil
 }
 
 func NewInstanceServiceFromMachine(machine *machinev1.Machine, connection *ovirtsdk.Connection) (*InstanceService, error) {
@@ -192,7 +150,7 @@ func (is *InstanceService) InstanceCreate(
 		Tag(ovirtsdk.NewTagBuilder().Name(machine.Labels["machine.openshift.io/cluster-api-cluster"]).MustBuild()).
 		Send()
 	if err != nil {
-		klog.Errorf("Failed to add tag to  VM, skipping", err)
+		klog.Errorf("Failed to add tag to VM, skipping", err)
 	}
 
 	return &Instance{response.MustVm()}, nil

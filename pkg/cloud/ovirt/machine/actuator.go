@@ -35,7 +35,6 @@ import (
 const (
 	TimeoutInstanceCreate       = 5 * time.Minute
 	RetryIntervalInstanceStatus = 10 * time.Second
-	credentialsSecretName       = "ovirt-credentials"
 )
 
 type OvirtActuator struct {
