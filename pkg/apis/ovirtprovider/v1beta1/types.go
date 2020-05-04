@@ -67,6 +67,11 @@ type OvirtMachineProviderSpec struct {
 	// be used for and this effects the instance parameters.
 	// One of "desktop, server, high_performance"
 	VMType string `json:"type,omitempty"`
+
+	// NetworkInterfaces defines the list of the network interfaces of the VM.
+	// All network interfaces from the template are discarded and new ones will
+	// be created, unless the list is empty or nil
+	NetworkInterfaces []*NetworkInterface `json:"network_interfaces,omitempty"`
 }
 
 // CPU defines the VM cpu, made of (Sockets * Cores * Threads)
@@ -87,6 +92,12 @@ type CPU struct {
 type Disk struct {
 	// SizeGB size of the bootable disk in GiB.
 	SizeGB int64 `json:"size_gb"`
+}
+
+// NetworkInterface defines a VM network interface
+type NetworkInterface struct {
+	// VNICProfileID the id of the vNic profile
+	VNICProfileID string `json:"vnic_profile_id"`
 }
 
 // +genclient
