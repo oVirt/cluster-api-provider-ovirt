@@ -201,6 +201,14 @@ func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cl
 	}
 	// we might not have the vm id updated on the machine spec yet, so get by name.
 
+	currentMachine, err := actuator.instanceStatus(machine)
+	if err != nil {
+		return err
+	}
+	if !actuator.requiresUpdate(machine, currentMachine) {
+		klog.V(5).Info("machine is up-to-date, skipping update.")
+		return nil
+	}
 	return actuator.updateAnnotation(machine, instance)
 }
 
