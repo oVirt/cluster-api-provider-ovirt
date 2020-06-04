@@ -39,11 +39,10 @@ func GetCredentialsSecret(coreClient client.Client, namespace string, secretName
 	o.Username = string(credentialsSecret.Data["ovirt_username"])
 	o.Password = string(credentialsSecret.Data["ovirt_password"])
 	o.CAFile = string(credentialsSecret.Data["ovirt_cafile"])
-	insecure, err  := strconv.ParseBool(string(credentialsSecret.Data["ovirt_insecure"]))
+	insecure, err := strconv.ParseBool(string(credentialsSecret.Data["ovirt_insecure"]))
 	if err == nil {
 		o.Insecure = insecure
 	}
 
 	return &o, nil
 }
-
