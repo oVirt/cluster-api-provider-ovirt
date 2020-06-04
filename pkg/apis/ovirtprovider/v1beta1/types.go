@@ -27,7 +27,7 @@ import (
 // OvirtMachineProviderSpec is the type that will be embedded in a Machine.Spec.ProviderSpec field
 // for an Ovirt VM. It is used by the Ovirt machine actuator to create a single machine instance.
 type OvirtMachineProviderSpec struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// UserDataSecret contains a local reference to a secret that contains the
@@ -48,8 +48,6 @@ type OvirtMachineProviderSpec struct {
 
 	// the oVirt cluster this VM instance belongs too
 	ClusterId string `json:"cluster_id"`
-
-
 }
 
 // +genclient
@@ -107,29 +105,29 @@ type OvirtMachineProviderConditionType string
 
 // Valid conditions for an oVirt machine instance
 const (
-        // MachineCreated indicates whether the machine has been created or not. If not,
-        // it should include a reason and message for the failure.
-        MachineCreated OvirtMachineProviderConditionType = "MachineCreated"
+	// MachineCreated indicates whether the machine has been created or not. If not,
+	// it should include a reason and message for the failure.
+	MachineCreated OvirtMachineProviderConditionType = "MachineCreated"
 )
 
 // OvirtMachineProviderCondition is a condition in a OvirtMachineProviderStatus
 type OvirtMachineProviderCondition struct {
-        // Type is the type of the condition.
-        Type OvirtMachineProviderConditionType `json:"type"`
-        // Status is the status of the condition.
-        Status corev1.ConditionStatus `json:"status"`
-        // LastProbeTime is the last time we probed the condition.
-        // +optional
-        LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
-        // LastTransitionTime is the last time the condition transitioned from one status to another.
-        // +optional
-        LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-        // Reason is a unique, one-word, CamelCase reason for the condition's last transition.
-        // +optional
-        Reason string `json:"reason,omitempty"`
-        // Message is a human-readable message indicating details about last transition.
-        // +optional
-        Message string `json:"message,omitempty"`
+	// Type is the type of the condition.
+	Type OvirtMachineProviderConditionType `json:"type"`
+	// Status is the status of the condition.
+	Status corev1.ConditionStatus `json:"status"`
+	// LastProbeTime is the last time we probed the condition.
+	// +optional
+	LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
+	// LastTransitionTime is the last time the condition transitioned from one status to another.
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+	// Reason is a unique, one-word, CamelCase reason for the condition's last transition.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// Message is a human-readable message indicating details about last transition.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 func init() {

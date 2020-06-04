@@ -27,6 +27,7 @@ import (
 const (
 	OvirtIdAnnotationKey = "VmId"
 )
+
 // ActuatorParams holds parameter information for Actuator
 type ActuatorParams struct {
 	Namespace      string
