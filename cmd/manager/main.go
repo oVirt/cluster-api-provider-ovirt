@@ -24,9 +24,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/apis"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/apis"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
 
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
 	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset"

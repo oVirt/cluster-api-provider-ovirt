@@ -23,9 +23,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt"
-	"github.com/ovirt/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
+	ovirtconfigv1 "github.com/openshift/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 
 	apierrors "github.com/openshift/cluster-api/pkg/errors"
 	"github.com/openshift/cluster-api/pkg/util"
@@ -35,7 +35,6 @@ import (
 const (
 	TimeoutInstanceCreate       = 5 * time.Minute
 	RetryIntervalInstanceStatus = 10 * time.Second
-	credentialsSecretName       = "ovirt-credentials"
 )
 
 type OvirtActuator struct {
@@ -202,6 +201,14 @@ func (actuator *OvirtActuator) Update(ctx context.Context, cluster *clusterv1.Cl
 	}
 	// we might not have the vm id updated on the machine spec yet, so get by name.
 
+	currentMachine, err := actuator.instanceStatus(machine)
+	if err != nil {
+		return err
+	}
+	if !actuator.requiresUpdate(machine, currentMachine) {
+		klog.V(5).Info("machine is up-to-date, skipping update.")
+		return nil
+	}
 	return actuator.updateAnnotation(machine, instance)
 }
 

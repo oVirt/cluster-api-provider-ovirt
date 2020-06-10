@@ -7,6 +7,7 @@ package clients
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/openshift/cluster-api/pkg/util"
@@ -19,7 +20,7 @@ import (
 
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 
-	ovirtconfigv1 "github.com/ovirt/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
+	ovirtconfigv1 "github.com/openshift/cluster-api-provider-ovirt/pkg/apis/ovirtprovider/v1beta1"
 )
 
 type InstanceService struct {
@@ -89,12 +90,35 @@ func (is *InstanceService) InstanceCreate(
 		CustomScript(string(ignition)).
 		HostName(machine.Name).
 		MustBuild()
-	vm, err := ovirtsdk.NewVmBuilder().
+
+	vmBuilder := ovirtsdk.NewVmBuilder().
 		Name(machine.Name).
 		Cluster(cluster).
 		Template(template).
-		Initialization(init).
-		Build()
+		Initialization(init)
+
+	if providerSpec.VMType != "" {
+		vmBuilder.Type(ovirtsdk.VmType(providerSpec.VMType))
+	}
+	if providerSpec.InstanceTypeId != "" {
+		vmBuilder.InstanceTypeBuilder(
+			ovirtsdk.NewInstanceTypeBuilder().
+				Id(providerSpec.InstanceTypeId))
+	} else {
+		if providerSpec.CPU != nil {
+			vmBuilder.CpuBuilder(
+				ovirtsdk.NewCpuBuilder().
+					TopologyBuilder(ovirtsdk.NewCpuTopologyBuilder().
+						Cores(int64(providerSpec.CPU.Cores)).
+						Sockets(int64(providerSpec.CPU.Sockets)).
+						Threads(int64(providerSpec.CPU.Threads))))
+		}
+		if providerSpec.MemoryMB > 0 {
+			vmBuilder.Memory(int64(math.Pow(2, 20)) * int64(providerSpec.MemoryMB))
+		}
+	}
+
+	vm, err := vmBuilder.Build()
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to construct VM struct")
 	}
@@ -106,16 +130,90 @@ func (is *InstanceService) InstanceCreate(
 		return nil, err
 	}
 
+	err = is.Connection.WaitForVM(response.MustVm().MustId(), ovirtsdk.VMSTATUS_DOWN, time.Minute)
+	if err != nil {
+		return nil, errors.Wrap(err, "Timed out waiting for the VM creation to finish")
+	}
+
+	vmService := is.Connection.SystemService().VmsService().VmService(response.MustVm().MustId())
+
+	if providerSpec.OSDisk != nil {
+		err = is.handleDiskExtension(vmService, response, providerSpec)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = is.handleNics(vmService, providerSpec)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed handling nics creation for VM %s", vm.MustName())
+	}
+
 	_, err = is.Connection.SystemService().VmsService().
 		VmService(response.MustVm().MustId()).
 		TagsService().Add().
 		Tag(ovirtsdk.NewTagBuilder().Name(machine.Labels["machine.openshift.io/cluster-api-cluster"]).MustBuild()).
 		Send()
 	if err != nil {
-		klog.Errorf("Failed to add tag to VM : %v - skipping", err)
+		klog.Errorf("Failed to add tag to VM, skipping : %v", err)
 	}
 
 	return &Instance{response.MustVm()}, nil
+}
+
+func (is *InstanceService) handleDiskExtension(vmService *ovirtsdk.VmService, createdVM *ovirtsdk.VmsServiceAddResponse, providerSpec *ovirtconfigv1.OvirtMachineProviderSpec) error {
+	attachmentsResponse, err := vmService.DiskAttachmentsService().List().Send()
+	if err != nil {
+		return err
+	}
+
+	var bootableDiskAttachment *ovirtsdk.DiskAttachment
+	for _, disk := range attachmentsResponse.MustAttachments().Slice() {
+		if disk.MustBootable() {
+			// found the os disk
+			bootableDiskAttachment = disk
+		}
+	}
+	if bootableDiskAttachment == nil {
+		return fmt.Errorf("the VM %s(%s) doesn't have a bootable disk - was Blank template used by mistake?",
+			createdVM.MustVm().MustName(), createdVM.MustVm().MustId())
+	}
+	// extend the disk if requested size is bigger than template. We won't support shrinking it.
+	newDiskSize := providerSpec.OSDisk.SizeGB * int64(math.Pow(2, 30))
+
+	// get the disk
+	getDisk, err := vmService.Connection().SystemService().DisksService().DiskService(bootableDiskAttachment.MustId()).Get().Send()
+	if err != nil {
+		return err
+	}
+
+	size := getDisk.MustDisk().MustProvisionedSize()
+	if newDiskSize < size {
+		klog.Warning("The machine spec specified new disk size %d, and the current disk size is %d. Shrinking is "+
+			"not supported.", newDiskSize, size)
+	}
+	if newDiskSize > size {
+		klog.Infof("Extending the OS disk from %d to %d", size, newDiskSize)
+		bootableDiskAttachment.SetDisk(getDisk.MustDisk())
+		bootableDiskAttachment.
+			MustDisk().
+			SetProvisionedSize(newDiskSize)
+		_, err := vmService.DiskAttachmentsService().
+			AttachmentService(bootableDiskAttachment.MustId()).
+			Update().
+			DiskAttachment(bootableDiskAttachment).
+			Send()
+		if err != nil {
+			return fmt.Errorf("failed to update the OS disk - %s", err)
+		}
+		klog.Infof("Waiting while extending the OS disk")
+		// wait for the disk extension to be over
+		err = is.Connection.WaitForDisk(bootableDiskAttachment.MustId(), ovirtsdk.DISKSTATUS_OK, 20*time.Minute)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (is *InstanceService) InstanceDelete(id string) error {
@@ -218,4 +316,36 @@ func (is *InstanceService) GetVmByName() (*Instance, error) {
 	}
 	// returning an nil instance if we didn't find a match
 	return nil, nil
+}
+
+func (is *InstanceService) handleNics(vmService *ovirtsdk.VmService, spec *ovirtconfigv1.OvirtMachineProviderSpec) error {
+	if spec.NetworkInterfaces == nil || len(spec.NetworkInterfaces) == 0 {
+		return nil
+	}
+	nicList, err := vmService.NicsService().List().Send()
+	if err != nil {
+		return errors.Wrap(err, "failed fetching VM network interfaces")
+	}
+
+	// remove all existing nics
+	for _, n := range nicList.MustNics().Slice() {
+		_, err := vmService.NicsService().NicService(n.MustId()).Remove().Send()
+		if err != nil {
+			return errors.Wrap(err, "failed clearing all interfaces before populating new ones")
+		}
+	}
+
+	// re-add nics
+	for i, nic := range spec.NetworkInterfaces {
+		_, err := vmService.NicsService().Add().Nic(
+			ovirtsdk.NewNicBuilder().
+				Name(fmt.Sprintf("nic%d", i+1)).
+				VnicProfileBuilder(ovirtsdk.NewVnicProfileBuilder().Id(nic.VNICProfileID)).
+				MustBuild()).
+			Send()
+		if err != nil {
+			return errors.Wrap(err, "failed to create network interface")
+		}
+	}
+	return nil
 }
