@@ -98,7 +98,7 @@ func (actuator *OvirtActuator) setMachineInstanceStatus(machine *machinev1.Machi
 	status.ObjectMeta.Annotations[InstanceStatusAnnotationKey] = ""
 
 	serializer := json.NewSerializer(json.DefaultMetaFactory, actuator.scheme, actuator.scheme, false)
-	b := []byte{}
+	var b []byte
 	buff := bytes.NewBuffer(b)
 	err := serializer.Encode((*machinev1.Machine)(status), buff)
 	if err != nil {
