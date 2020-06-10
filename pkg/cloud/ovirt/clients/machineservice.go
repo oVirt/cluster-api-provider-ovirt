@@ -126,7 +126,7 @@ func (is *InstanceService) InstanceCreate(
 	klog.Infof("creating VM: %v", vm.MustName())
 	response, err := is.Connection.SystemService().VmsService().Add().Vm(vm).Send()
 	if err != nil {
-		klog.Errorf("Failed creating VM", err)
+		klog.Errorf("Failed creating VM : %v", err)
 		return nil, err
 	}
 
@@ -155,7 +155,7 @@ func (is *InstanceService) InstanceCreate(
 		Tag(ovirtsdk.NewTagBuilder().Name(machine.Labels["machine.openshift.io/cluster-api-cluster"]).MustBuild()).
 		Send()
 	if err != nil {
-		klog.Errorf("Failed to add tag to VM, skipping", err)
+		klog.Errorf("Failed to add tag to VM, skipping : %v", err)
 	}
 
 	return &Instance{response.MustVm()}, nil
@@ -276,7 +276,7 @@ func (is *InstanceService) GetInstanceList(opts *InstanceListOpts) ([]*Instance,
 // Get VM by ID or Name
 func (is *InstanceService) GetVm(machine machinev1.Machine) (instance *Instance, err error) {
 	if machine.Spec.ProviderID != nil && *machine.Spec.ProviderID != "" {
-		klog.Infof("Fetching VM by ID: %s", machine.Spec.ProviderID)
+		klog.Infof("Fetching VM by ID: %v", machine.Spec.ProviderID)
 		instance, err = is.GetVmByID(*machine.Spec.ProviderID)
 		if err == nil {
 			return instance, err
