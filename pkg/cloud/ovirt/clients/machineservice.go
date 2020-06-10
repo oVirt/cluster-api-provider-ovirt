@@ -223,7 +223,7 @@ func (is *InstanceService) InstanceDelete(id string) error {
 	if err != nil {
 		return err
 	}
-	err = util.PollImmediate(time.Second * 10, time.Minute * 5, func() (bool, error) {
+	err = util.PollImmediate(time.Second*10, time.Minute*5, func() (bool, error) {
 		vmResponse, err := vmService.Get().Send()
 		if err != nil {
 			return false, nil
@@ -233,14 +233,14 @@ func (is *InstanceService) InstanceDelete(id string) error {
 			return false, err
 		}
 
-		return  vm.MustStatus() == ovirtsdk.VMSTATUS_DOWN, nil
+		return vm.MustStatus() == ovirtsdk.VMSTATUS_DOWN, nil
 	})
 	_, err = vmService.Remove().Send()
 
 	// poll till VM doesn't exist
-	err = util.PollImmediate(time.Second * 10, time.Minute * 5, func() (bool, error) {
+	err = util.PollImmediate(time.Second*10, time.Minute*5, func() (bool, error) {
 		_, err := vmService.Get().Send()
-		return  err != nil, nil
+		return err != nil, nil
 	})
 	return err
 }
