@@ -1,6 +1,6 @@
 # cluster-api-provider-ovirt
 
-https://github.com/oVirt/cluster-api-provider-ovirt
+[![Docker Repository on Quay](https://quay.io/repository/ovirt/cluster-api-provider-ovirt/status "Docker Repository on Quay")](https://quay.io/repository/ovirt/cluster-api-provider-ovirt)
 
 Implementation of the oVirt provider for the [cluster-api project] version `v1beta` \
 using openshift/cluster-api-provider api, which implements the machine actuator.
