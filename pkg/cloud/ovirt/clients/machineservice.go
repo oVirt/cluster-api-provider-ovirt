@@ -223,7 +223,7 @@ func (is *InstanceService) InstanceDelete(id string) error {
 	if err != nil {
 		return err
 	}
-	err = util.PollImmediate(time.Second * 10, time.Minute * 5, func() (bool, error) {
+	err = util.PollImmediate(time.Second*10, time.Minute*5, func() (bool, error) {
 		vmResponse, err := vmService.Get().Send()
 		if err != nil {
 			return false, nil
@@ -233,50 +233,21 @@ func (is *InstanceService) InstanceDelete(id string) error {
 			return false, err
 		}
 
-		return  vm.MustStatus() == ovirtsdk.VMSTATUS_DOWN, nil
+		return vm.MustStatus() == ovirtsdk.VMSTATUS_DOWN, nil
 	})
 	_, err = vmService.Remove().Send()
 
 	// poll till VM doesn't exist
-	err = util.PollImmediate(time.Second * 10, time.Minute * 5, func() (bool, error) {
+	err = util.PollImmediate(time.Second*10, time.Minute*5, func() (bool, error) {
 		_, err := vmService.Get().Send()
-		return  err != nil, nil
+		return err != nil, nil
 	})
 	return err
-}
-
-func (is *InstanceService) GetInstanceList(opts *InstanceListOpts) ([]*Instance, error) {
-	var instanceList []*Instance
-
-	response, err := is.Connection.SystemService().VmsService().List().Send()
-	if err != nil {
-		klog.Errorf("Failed to fetch list of VMs for the cluster")
-		return nil, err
-	}
-
-	if vms, exists := response.Vms(); exists {
-		// TODO (rgolan) very inefficient get all query.
-		//  Need to fetch all by cluster id and by Tag
-		// which is set the to openshift cluster Id
-		klog.Infof("Search return %d vms", len(vms.Slice()))
-		for _, vm := range vms.Slice() {
-			if cluster, ok := vm.Cluster(); ok {
-				id, _ := cluster.Id()
-				if id == is.ClusterId {
-					name, _ := vm.Name()
-					klog.V(5).Infof("Found VM: %v", name)
-					instanceList = append(instanceList, &Instance{Vm: vm})
-				}
-			}
-		}
-	}
-	return instanceList, nil
 }
 
 // Get VM by ID or Name
 func (is *InstanceService) GetVm(machine machinev1.Machine) (instance *Instance, err error) {
 	if machine.Spec.ProviderID != nil && *machine.Spec.ProviderID != "" {
-		klog.Infof("Fetching VM by ID: %s", machine.Spec.ProviderID)
 		instance, err = is.GetVmByID(*machine.Spec.ProviderID)
 		if err == nil {
 			return instance, err

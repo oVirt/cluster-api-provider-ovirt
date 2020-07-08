@@ -45,7 +45,6 @@ var (
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 )
 
-
 // MachineSpecFromProviderSpec
 func MachineSpecFromProviderSpec(providerSpec machinev1.ProviderSpec) (*OvirtMachineProviderSpec, error) {
 	if providerSpec.Value == nil {
@@ -122,4 +121,3 @@ func ProviderStatusFromRawExtension(rawExtension *runtime.RawExtension) (*OvirtM
 	klog.V(5).Infof("Got provider Status from raw extension: %+v", providerStatus)
 	return providerStatus, nil
 }
-
