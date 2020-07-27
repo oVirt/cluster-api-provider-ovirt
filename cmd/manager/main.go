@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/cluster-api-provider-ovirt/pkg/apis"
 	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt"
 	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/providerIDcontroller"
 
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
 	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset"
@@ -145,6 +146,8 @@ func main() {
 	}
 
 	capimachine.AddWithActuator(mgr, machineActuator)
+
+	providerIDcontroller.Add(mgr, manager.Options{})
 
 	if err := mgr.AddReadyzCheck("ping", healthz.Ping); err != nil {
 		klog.Fatal(err)

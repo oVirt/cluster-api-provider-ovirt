@@ -335,6 +335,7 @@ k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
 # k8s.io/klog v1.0.0
 k8s.io/klog
+k8s.io/klog/klogr
 # k8s.io/kube-openapi v0.0.0-20190816220812-743ec37842bf
 k8s.io/kube-openapi/pkg/util/proto
 # k8s.io/utils v0.0.0-20190923111123-69764acb6e8e

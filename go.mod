@@ -3,6 +3,7 @@ module github.com/openshift/cluster-api-provider-ovirt
 go 1.12
 
 require (
+	github.com/go-logr/logr v0.1.0
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/openshift/cluster-api v0.0.0-20191030113141-9a3a7bbe9258
 	github.com/ovirt/go-ovirt v0.0.0-20200428093010-9bcc4fd4e6c0
