@@ -1,3 +1,6 @@
+# This repository is inactive, please refer to: https://github.com/openshift
+
+
 # cluster-api-provider-ovirt
 
 [![Docker Repository on Quay](https://quay.io/repository/ovirt/cluster-api-provider-ovirt/status "Docker Repository on Quay")](https://quay.io/repository/ovirt/cluster-api-provider-ovirt)
